@@ -52,20 +52,29 @@ async def test_basic_agent():
         Keep it to 3-4 lines.
         """
         
-        print("   ⏳ Waiting for AI response...")
-        result_event = await session.send_and_wait({"prompt": prompt})
+        assistant_messages = []
+        def handle_event(event):
+            if "ASSISTANT_MESSAGE" in str(event.type):
+                if hasattr(event, 'data') and event.data and hasattr(event.data, 'content'):
+                    assistant_messages.append(event.data.content)
 
-        # The assistant's final message is in the event preceding the ASSISTANT_TURN_END event
-        if result_event and result_event.parent_id:
-            final_message_event = session.get_event(result_event.parent_id)
-            if final_message_event and "ASSISTANT_MESSAGE" in str(final_message_event.type):
-                assistant_response = final_message_event.data.content
-                print("\n   ✅ Agent Response:")
-                print("   " + "-" * 56)
-                # Indent the response for readability
-                for line in assistant_response.split('\n'):
-                    print(f"     {line}")
-                print("   " + "-" * 56)
+        session.on(handle_event)
+        
+        print("   ⏳ Waiting for AI response...")
+        await session.send({"prompt": prompt})
+        await asyncio.sleep(5) # Give time for the events to be processed
+
+        if assistant_messages:
+            print("\n   ✅ Agent Response:")
+            print("   " + "-" * 56)
+            # The response might come in chunks, so join them
+            full_response = "".join(assistant_messages)
+            # Indent the response for readability
+            for line in full_response.split('\n'):
+                print(f"     {line}")
+            print("   " + "-" * 56)
+        else:
+            print("\n   No response received from agent.")
         
         # Cleanup
         print("\n5. Cleaning up...")

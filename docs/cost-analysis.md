@@ -20,48 +20,68 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 
 **Key Insight:** Cache hit rates dramatically reduce costs. After the first quarter of building up cached transformations, costs can drop by 40-60%.
 
+## Cost Assumptions
+
+**Platform Decisions:**
+- **Big Data Processing:** Microsoft Fabric (F8 or F16 capacity)
+- **AI Agent Runtime:** Azure Container Apps (no free tier - production billing)
+- **LLM/AI:** GitHub Copilot SDK Enterprise ($39/month + premium request overages)
+- **Code Cache:** Cosmos DB serverless
+- **User Interaction Storage:** Cosmos DB (separate container for feedback/tuning data)
+- **Audit Storage:** Immutable Blob Storage
+
+**Key Cost Drivers:**
+1. **Fabric Spark Cluster:** Largest component (~70% of total cost)
+2. **LLM API Calls:** Copilot SDK premium requests (varies by cache hit rate)
+3. **Container Apps:** 24/7 agent runtime
+4. **Cosmos DB:** Code cache + user interaction history
+
 ---
 
-## Pricing Research Summary (2026)
+## Azure Pricing (2026)
 
-### Azure Container Apps
+### Azure Container Apps (Production)
 - **vCPU:** $0.000024 per vCPU-second
 - **Memory:** $0.000003 per GiB-second
-- **Monthly estimate:** 2 vCPU + 4 GiB RAM running 24/7 ≈ $62/month
-- **Free tier:** 180,000 vCPU-seconds, 360,000 GiB-seconds/month (first month essentially free)
+- **Configuration:** 2 vCPU + 4 GiB RAM, 24/7 operation
+- **Monthly cost:** ~$85-120 depending on utilization
+
+### Microsoft Fabric
+- **F8 Capacity (Reserved 1-year):** $625/month
+- **F16 Capacity (Reserved 1-year):** $1,251/month (for busy season burst)
+- **Pay-as-you-go:** Higher rates, use reserved for cost optimization
+
+### GitHub Copilot SDK
+- **Enterprise tier:** $39/user/month base
+- **Included:** 1,000 premium requests/month
+- **Overage:** $0.04 per additional premium request
+- **Premium request = full AI analysis cycle (parsing + generation)**
+
+### Azure Cosmos DB (Serverless)
+**Code Cache Container:**
+- **RU cost:** $0.25 per 1M RUs
+- **Storage:** $0.25 per GB/month
+- **Estimated:** 10-20GB, 1-2M RUs/month = ~$5-10/month
+
+**User Interaction Container (NEW):**
+- Stores: User feedback, approval history, conversation logs
+- Purpose: Future model tuning, pattern analysis
+- **Estimated:** 5-10GB, 500K RUs/month = ~$3-5/month
 
 ### Azure Data Lake Storage Gen2 (Hot Tier)
 - **Storage:** $0.0184 per GB/month
-- **Read operations:** $0.004 per 10,000 transactions
-- **Write operations:** $0.05 per 10,000 transactions
-- **Transaction rule:** Billed per 4MB chunks
+- **Transactions:** $0.004-0.05 per 10K operations
+- **Estimated:** ~$30-85/month depending on volume
 
-### Azure Databricks (Jobs Compute)
-- **DBU rate (Jobs):** $0.15 per DBU (cheaper than All-Purpose at $0.40-0.55/DBU)
-- **VM costs:** Variable by node type (e.g., Standard_DS3_v2 ≈ $0.27/hour)
-- **Example cluster:** 3-node cluster = ~6 DBUs/hour = $0.90/hour DBU + $0.81/hour VM = **$1.71/hour total**
+### Immutable Blob Storage (Audit Trail)
+- **Storage:** $0.018 per GB/month
+- **Immutability:** No extra charge for policy
+- **Estimated:** ~$5-10/month
 
-### Microsoft Fabric
-- **F8 Capacity:** $1,051/month pay-as-you-go (or $625/month with 1-year reservation)
-- **F16 Capacity:** $2,102/month pay-as-you-go (or $1,251/month with 1-year reservation)
-- **Burst pricing:** Can temporarily exceed capacity with overage charges
-- **Advantage:** Simpler billing model, unified platform
-
-### GitHub Copilot SDK
-- **Enterprise tier:** $39/user/month (1,000 premium requests/month included)
-- **Overage:** $0.04 per additional premium request
-- **For automation:** Likely need Pro+ ($39/month) or Enterprise tier
-
-### Azure Cosmos DB (Serverless - for Code Cache)
-- **RU cost:** $0.25 per 1 million RUs
-- **Storage:** $0.25 per GB/month
-- **Typical cache operation:** 5-10 RUs per lookup/write
-- **Monthly estimate:** 10GB storage + 1M RUs = $2.50 + $0.25 = **$2.75/month**
-
-### Azure Application Insights (Monitoring)
+### Azure Monitor (Application Insights)
 - **First 5 GB/month:** Free
 - **Beyond 5 GB:** $2.30 per GB
-- **Estimate:** $0-20/month depending on logging verbosity
+- **Estimated:** ~$10-50/month depending on verbosity
 
 ---
 
