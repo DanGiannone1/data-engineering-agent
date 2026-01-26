@@ -24,17 +24,20 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 
 **Platform Decisions:**
 - **Big Data Processing:** Microsoft Fabric (F8 or F16 capacity)
-- **AI Agent Runtime:** Azure Container Apps (no free tier - production billing)
-- **LLM/AI:** GitHub Copilot SDK Enterprise ($39/month + premium request overages)
+- **AI Agent Runtime:** Azure Container Apps - **Production-grade (4 vCPU, 8 GiB RAM)**
+- **LLM/AI Platform:** 
+  - GitHub Copilot SDK Enterprise ($39/month + overages)
+  - **Azure AI Foundry** for evaluation, tracing, and governance
 - **Code Cache:** Cosmos DB serverless
 - **User Interaction Storage:** Cosmos DB (separate container for feedback/tuning data)
 - **Audit Storage:** Immutable Blob Storage
 
 **Key Cost Drivers:**
-1. **Fabric Spark Cluster:** Largest component (~70% of total cost)
-2. **LLM API Calls:** Copilot SDK premium requests (varies by cache hit rate)
-3. **Container Apps:** 24/7 agent runtime
-4. **Cosmos DB:** Code cache + user interaction history
+1. **Azure AI Foundry:** Model evaluations, tracing, guardrails (~40-50% of total cost)
+2. **Fabric Spark Cluster:** Execution engine (~25-30% of total cost)
+3. **Container Apps (Production):** 4 vCPU, 8 GiB for enterprise workload (~8-10%)
+4. **LLM API Calls:** Copilot SDK premium requests (varies by cache hit rate)
+5. **Cosmos DB:** Code cache + user interaction history
 
 ---
 
@@ -43,8 +46,25 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 ### Azure Container Apps (Production)
 - **vCPU:** $0.000024 per vCPU-second
 - **Memory:** $0.000003 per GiB-second
-- **Configuration:** 2 vCPU + 4 GiB RAM, 24/7 operation
-- **Monthly cost:** ~$85-120 depending on utilization
+- **Configuration:** **4 vCPU + 8 GiB RAM**, 24/7 operation (enterprise-grade)
+- **Monthly cost:** ~$200-300 depending on utilization
+
+### Azure AI Foundry
+**Model Evaluation:**
+- **GPT-4 evaluation runs:** $0.03 per 1K tokens input, $0.06 per 1K tokens output
+- **Custom evaluators:** $50-150/month for compute
+- **Estimated:** 100-200 evaluation runs/month = $1,000-1,500/month
+
+**Tracing & Observability:**
+- **Trace storage:** $0.10 per GB
+- **Trace queries:** $0.50 per 100K queries
+- **Estimated:** Full tracing for 300-1,000 runs = $300-500/month
+
+**Content Safety & Guardrails:**
+- **Per-request screening:** $0.001 per request
+- **Estimated:** All AI generations screened = $50-100/month
+
+**Total AI Foundry:** ~$1,500-2,000/month
 
 ### Microsoft Fabric
 - **F8 Capacity (Reserved 1-year):** $625/month
@@ -61,27 +81,27 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 **Code Cache Container:**
 - **RU cost:** $0.25 per 1M RUs
 - **Storage:** $0.25 per GB/month
-- **Estimated:** 10-20GB, 1-2M RUs/month = ~$5-10/month
+- **Estimated:** 10-20GB, 1-2M RUs/month = ~$8-15/month
 
-**User Interaction Container (NEW):**
+**User Interaction Container:**
 - Stores: User feedback, approval history, conversation logs
 - Purpose: Future model tuning, pattern analysis
-- **Estimated:** 5-10GB, 500K RUs/month = ~$3-5/month
+- **Estimated:** 5-10GB, 500K RUs/month = ~$5-10/month
 
 ### Azure Data Lake Storage Gen2 (Hot Tier)
 - **Storage:** $0.0184 per GB/month
 - **Transactions:** $0.004-0.05 per 10K operations
-- **Estimated:** ~$30-85/month depending on volume
+- **Estimated:** ~$85-150/month depending on volume
 
 ### Immutable Blob Storage (Audit Trail)
 - **Storage:** $0.018 per GB/month
 - **Immutability:** No extra charge for policy
-- **Estimated:** ~$5-10/month
+- **Estimated:** ~$10-20/month
 
 ### Azure Monitor (Application Insights)
 - **First 5 GB/month:** Free
 - **Beyond 5 GB:** $2.30 per GB
-- **Estimated:** ~$10-50/month depending on verbosity
+- **Estimated:** ~$25-50/month for enterprise logging
 
 ---
 

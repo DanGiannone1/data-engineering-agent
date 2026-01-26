@@ -8,18 +8,19 @@
 
 ## Executive Summary
 
-A Microsoft architect is helping a customer build an AI-powered data engineering agent that transforms diverse client data formats into standardized output. This POC has the potential to drive **$155K+ in 3-year Azure consumption** from a single customer and create a **repeatable pattern** worth **$50-100M TAM** across similar enterprise accounts.
+A Microsoft architect is helping a customer build an AI-powered data engineering agent that transforms diverse client data formats into standardized output. This engagement drives **significant Azure consumption** and creates a **repeatable pattern** for other large enterprises with substantial data engineering workloads.
 
 **Critical Success Factor:** Using **GitHub Copilot SDK** as the agentic foundation enables 8-week production deployment vs. 6+ months with DIY frameworks—directly addressing the industry-wide agentic AI POC-to-production crisis.
 
 **Key Numbers:**
-- **Customer Value:** $310K+/year labor savings vs. manual process
-- **Microsoft Revenue (Year 1):** $9,500 Azure consumption  
-- **Microsoft Revenue (Year 3):** $96K+ when scaled across customer's enterprise
-- **Market Opportunity:** 1,000+ enterprises with similar needs
+- **Customer Value:** Significant labor savings through automation
+- **Microsoft Revenue (Steady State):** $3,000-4,000/month Azure consumption  
+- **Microsoft Revenue (Annual):** $36,000-48,000/year from this single use case
+- **Competitive Win:** Migration from Databricks to Microsoft Fabric
+- **Strategic Opportunity:** Repeatable pattern for enterprises with large-scale data engineering needs
 - **Time-to-Production:** 8 weeks (Copilot SDK) vs. 6+ months (DIY frameworks)
 
-**Strategic Insight:** This engagement validates **GitHub Copilot SDK as the unlock** for moving enterprise agentic AI from POC to production—a capability unique to Microsoft that AWS and Google cannot easily replicate.
+**Strategic Insight:** This engagement validates **GitHub Copilot SDK as the unlock** for moving enterprise agentic AI from POC to production—a capability unique to Microsoft that AWS and Google cannot easily replicate. Additionally, it provides a wedge to displace Databricks with Fabric at a strategic account.
 
 ---
 
@@ -52,24 +53,34 @@ A Microsoft architect is helping a customer build an AI-powered data engineering
 
 | Service | Role | Monthly Cost | Annual Revenue |
 |---------|------|--------------|----------------|
-| **Microsoft Fabric (F8 Reserved)** | Spark processing | $625 | $7,500 |
-| **Azure Container Apps** | AI agent runtime | $85 | $1,020 |
+| **Microsoft Fabric (F8 Reserved)** | Spark processing | $625-1,251 | $7,500-15,012 |
+| **Azure AI Foundry** | Model evaluation & tracing | $1,500-2,000 | $18,000-24,000 |
+| **Azure Container Apps (Production)** | AI agent runtime (4 vCPU, 8GB) | $200-300 | $2,400-3,600 |
 | **GitHub Copilot Enterprise** | AI code generation | $39 | $468 |
-| **Azure Data Lake Storage Gen2** | Data storage | $30 | $360 |
-| **Cosmos DB (Serverless)** | Code cache | $3 | $36 |
-| **Application Insights** | Monitoring | $10 | $120 |
-| **TOTAL** | | **$792/month** | **$9,504/year** |
+| **Azure Data Lake Storage Gen2** | Data storage | $85-150 | $1,020-1,800 |
+| **Cosmos DB (Serverless)** | Code cache + interactions | $15-30 | $180-360 |
+| **Application Insights** | Monitoring | $25-50 | $300-600 |
+| **Immutable Blob Storage** | Audit compliance | $10-20 | $120-240 |
+| **TOTAL** | | **$2,500-4,000/month** | **$30,000-48,000/year** |
 
 ### Why This Matters
+
+**Competitive Displacement:**
+- **Current state:** Customer uses Databricks for Spark workloads
+- **Proposed state:** Migrate to Microsoft Fabric
+- **Strategic win:** Get foothold in data engineering platform at Deloitte
+- **Expansion opportunity:** Once proven, can expand Fabric adoption across other Deloitte workloads
 
 **Multi-Service Consumption:**
 This isn't just a single-service win—it requires the full Microsoft stack:
 - Azure compute, storage, database, monitoring
+- **Azure AI Foundry** for enterprise-grade LLM evaluation and observability
 - GitHub Copilot SDK (new product adoption)
 - Microsoft Fabric (competitive positioning vs. Databricks/Snowflake)
 
 **Strategic Products:**
-- **Fabric:** Validates as enterprise ETL platform (key battleground with Databricks)
+- **Fabric:** Validates as enterprise ETL platform and displaces Databricks
+- **AI Foundry:** Showcases advanced AI governance capabilities (evals, guardrails, tracing)
 - **Copilot SDK:** One of first production agentic AI deployments
 - **Container Apps:** Modern serverless compute adoption
 
