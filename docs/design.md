@@ -37,9 +37,20 @@ The customer manages data transformations for **3,000+ clients**, each with uniq
 
 ### Business Impact
 
-- **High cost:** $800/transformation × 18,000/year = **$14.4M annually** in manual effort
-- **Slow onboarding:** 8 hours per client delays time-to-value
-- **Scalability bottleneck:** Cannot handle growth without proportional headcount increase
+**Current Manual Process Costs:**
+- **New client onboarding:** ~8 hours data engineering + business analysis per client
+- **Schema change updates:** ~4-6 hours to modify existing transformations
+- **Pure reruns (no changes):** ~30 minutes manual validation + Spark execution
+
+**Volume Breakdown (Typical Year):**
+- New clients: ~5-10% of annual volume
+- Schema changes: ~10-20% of annual volume  
+- Pure reruns: ~70-80% of annual volume (quarterly runs with unchanged schemas)
+
+**Cost Impact:**
+- **Scalability bottleneck:** Cannot handle thousands of transformations without proportional headcount
+- **Slow onboarding:** 8-hour setup delays time-to-value for new clients
+- **Maintenance burden:** Schema changes require manual rework
 - **Compliance risk:** Manual processes increase audit trail complexity
 
 ---
@@ -57,10 +68,12 @@ Build an **AI-powered data engineering agent** that automates the transformation
 4. **Intelligent Caching** reuses transformations when client schema unchanged
 
 **Key Benefits:**
-- Reduce transformation time from **8 hours to 30 minutes** (94% reduction)
-- Lower cost from **$800 to $2.25 per run** (99.7% reduction at scale)
-- Enable scaling to 18,000+ transformations/year without headcount growth
-- Maintain human oversight for compliance and quality assurance
+- **New client onboarding:** Reduce from 8 hours to 30 minutes (94% time reduction)
+- **Schema changes:** Reduce from 4-6 hours to 30 minutes (agent regenerates transformations)
+- **Pure reruns:** Reduce from 30 minutes to 15 minutes (cache hit, no AI analysis needed)
+- **Cost optimization:** Automated process + intelligent caching significantly reduces manual effort
+- **Scalability:** Handle thousands of transformations without linear headcount growth
+- **Compliance:** Maintain human oversight with complete audit trail
 
 ---
 
@@ -78,10 +91,10 @@ graph TD
     B --> E
     E --> F[ADLS Output<br/>Transformed Data]
     F --> G[Customer Validation System<br/>Existing DQ Checks]
-    G --> H[Azure SQL<br/>DNAV Tables]
+    G --> H[Azure SQL<br/>Standardized Output Tables]
     
     B -.-> I[Azure Monitor<br/>Audit Logging]
-    C -.-> J[Immutable Blob Storage<br/>7-Year Retention]
+    C -.-> J[Immutable Blob Storage<br/>Audit Trail: Approvals & Code History]
     
     style B fill:#0078d4,color:#fff
     style E fill:#7fba00,color:#fff
@@ -121,7 +134,7 @@ graph TD
 
 **Phase 4: Validation**
 12. Customer's existing deterministic validation system checks output
-13. **If pass**: Load to Azure SQL (DNAV tables)
+13. **If pass**: Load to Azure SQL (standardized output tables)
 14. **If fail**: Feedback loop returns to Phase 2 for refinement
 
 **Scale Targets:**

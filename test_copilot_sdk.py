@@ -21,9 +21,9 @@ async def test_basic_agent():
         print("\n1. Initializing Copilot client...")
         
         # Explicitly specify CLI path on Windows if needed, but uv should handle it
-        # cli_path = r"C:\Users\djgia\AppData\Roaming\npm\copilot.cmd"
+        cli_path = r"C:\Users\djgia\AppData\Roaming\npm\copilot.cmd"
         
-        client = CopilotClient()
+        client = CopilotClient({"cli_path": cli_path})
         print("   ✅ Client initialized")
         
         # Start the client
