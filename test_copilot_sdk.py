@@ -58,7 +58,7 @@ async def test_basic_agent():
         # The assistant's final message is in the event preceding the ASSISTANT_TURN_END event
         if result_event and result_event.parent_id:
             final_message_event = session.get_event(result_event.parent_id)
-            if final_message_event and final_message_event.type == SessionEventType.ASSISTANT_MESSAGE:
+            if final_message_event and "ASSISTANT_MESSAGE" in str(final_message_event.type):
                 assistant_response = final_message_event.data.content
                 print("\n   ✅ Agent Response:")
                 print("   " + "-" * 56)
