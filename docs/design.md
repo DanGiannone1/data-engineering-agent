@@ -1,7 +1,7 @@
 # AI Data Engineering Agent - Design Document
 
-**Version:** 1.2  
-**Date:** January 26, 2026  
+**Version:** 2.0
+**Date:** February 6, 2026
 **Status:** Draft
 
 ---
@@ -10,28 +10,34 @@
 
 ### Current State
 
-The customer manages data transformations for **3,000+ clients**, each with unique data formats and structures. Every client submits data files (1-10GB) that must be transformed into a standardized output format for downstream analytics and audit processes.
+The customer manages data transformations for **3,000+ clients**, each with unique data formats and structures. Every client submits data files (1-10GB) that must be transformed into a standardized output format (DNAV) for downstream audit processes.
+
+**Current Roles:**
+- **Auditors** — Conduct the actual audits using standardized data; Excel power users, not developers
+- **Specialists** (support team) — Data engineers who write PySpark/Spark notebooks and handle data wrangling using tools like Omnia Data
+
+**Business Sponsor Objective:** Make data engineering **self-service for auditors**, eliminating dependency on specialists. The AI agent replaces the specialist role — auditors provide the data dictionary and inputs, and the agent handles wrangling, with feedback loops for course correction.
 
 **Key Challenges:**
 
-1. **Hundreds of Custom PySpark Notebooks**
-   - Each client requires a unique transformation notebook
-   - Manual development and maintenance per client
-   - New client onboarding requires ~8 hours of data engineering work
+1. **Hundreds of Custom Transformation Scripts**
+   - Each client requires unique transformation logic
+   - Currently maintained as Spark notebooks in Databricks + M code/Power Query
+   - New client onboarding requires ~8 hours of specialist work
 
 2. **Manual, Error-Prone Process**
-   - Data engineers manually analyze mapping spreadsheets
-   - Write custom PySpark transformations for each client
+   - Specialists manually analyze mapping spreadsheets
+   - Write custom transformations for each client
    - Test and validate transformations
    - Cost: ~$800 per client transformation (8 hours @ $100/hour)
 
 3. **Scale Challenge**
-   - 3,000 clients × 4-6 engagements/year = ~18,000 transformations annually
-   - Peak load during audit busy season (Feb-April): 1,000+ transformations/month
-   - Cannot hire enough data engineers to scale manually
+   - 3,000 clients × 5 engagements/year = ~15,000 transformations annually (~1,250/month)
+   - Peak load during audit busy season (Feb-April): potentially higher
+   - Cannot hire enough specialists to scale manually
 
 4. **Maintenance Burden**
-   - Client schema changes require notebook updates
+   - Client schema changes require script updates
    - Difficult to track which transformations are current
    - Risk of using outdated transformation logic
 
@@ -64,7 +70,7 @@ Build an **AI-powered data engineering agent** that automates the transformation
 **Solution Overview:**
 1. **AI Agent** analyzes mapping spreadsheets and data samples to generate transformation logic
 2. **Human Review** approves pseudocode descriptions via conversational feedback
-3. **Automated Execution** generates and runs PySpark on Microsoft Fabric
+3. **Automated Execution** generates and runs PySpark on Azure Databricks
 4. **Intelligent Caching** reuses transformations when client schema unchanged
 
 **Key Benefits:**
@@ -83,161 +89,306 @@ Build an **AI-powered data engineering agent** that automates the transformation
 
 ```mermaid
 graph TD
-    A[Azure ADLS Gen2<br/>Client Data + Mappings] --> B[Azure Container App<br/>GitHub Copilot SDK Agent]
-    B --> C[Conversational Review<br/>Plain English Feedback]
+    U[Auditor<br/>Excel Power User] -->|Provides mapping + inputs| B
+    A[Azure ADLS Gen2<br/>Client Data + Mappings] --> B[Agent Runtime<br/>AKS or Durable Functions<br/>+ Microsoft Agent Framework]
+    B -->|Profiling, pseudocode,<br/>code generation| L[Azure OpenAI<br/>GPT-4o / GPT-4o-mini]
+    L --> B
+    B --> C[Pseudocode Review<br/>Plain English Feedback]
+    C -->|Approve / Revise| U
+    U -->|Feedback| C
     C --> B
-    B --> D[Cosmos DB<br/>Code Cache]
-    D --> E[Microsoft Fabric F8/F16<br/>Spark Cluster]
+    B --> D[Cosmos DB<br/>Code Cache + Agent State]
+    B --> R[ADO Repos<br/>Approved PySpark Code]
+    D --> E[Azure Databricks<br/>Jobs Compute Cluster]
     B --> E
     E --> F[ADLS Output<br/>Transformed Data]
-    F --> G[Customer Validation System<br/>Existing DQ Checks]
-    G --> H[Azure SQL<br/>Standardized Output Tables]
-    
-    B -.-> I[Azure Monitor<br/>Audit Logging]
-    C -.-> J[Immutable Blob Storage<br/>Audit Trail: Approvals & Code History]
-    
+    B --> G[Agent Integrity Checks<br/>Automated Validation<br/>3-try retry with error log]
+    G -->|Checks pass| H[Human Final Review<br/>Auditor Reviews Output]
+    H -->|Output rejected| C
+    H -->|Approved| I[Azure SQL<br/>Standardized Output Tables]
+
+    B -.-> J[Azure Monitor + OpenTelemetry<br/>Audit Logging]
+    C -.-> K[Immutable Blob Storage<br/>Audit Trail: Approvals & Code History]
+
     style B fill:#0078d4,color:#fff
+    style L fill:#0078d4,color:#fff
     style E fill:#7fba00,color:#fff
-    style I fill:#ff6b35,color:#fff
+    style G fill:#5c2d91,color:#fff
     style J fill:#ff6b35,color:#fff
+    style K fill:#ff6b35,color:#fff
+    style U fill:#68217a,color:#fff
+    style R fill:#f5af00,color:#000
 ```
+
+### Customer Tech Stack
+
+The customer's existing platform uses the following services. To minimize tech debt and align with CTO guardrails, we design around these:
+
+| Existing Service | Role in Current Platform |
+|-----------------|------------------------|
+| **.NET** | Application platform |
+| **Azure SQL** | Primary database |
+| **Azure Service Bus** | Async messaging / transactions |
+| **Azure Functions (Durable)** | Compute / long-running workflows |
+| **AKS** | Container orchestration |
+| **Azure Databricks** | Spark notebooks (existing) |
+| **ADLS Gen2** | Data lake storage |
+
+**Compute Decision:** The agent runtime will use **AKS** or **Azure Durable Functions** — both are already in the customer's approved tech stack. Azure Container Apps is noted as a future roadmap option as Microsoft invests in AI Foundry integration, but is not required for initial deployment.
 
 ### Services & Components
 
 | Component | Service | Purpose |
 |-----------|---------|---------|
-| **AI Agent** | Azure Container Apps + GitHub Copilot SDK | Analyze mappings, generate transformations, orchestrate workflow |
+| **AI Agent Runtime** | AKS or Azure Durable Functions + Microsoft Agent Framework | Orchestrate workflow, manage agent lifecycle, tool calling, checkpointing |
+| **LLM Backend** | Azure OpenAI (GPT-4o / GPT-4o-mini) | Data analysis, pseudocode generation, PySpark code generation |
 | **Data Storage** | Azure ADLS Gen2 | Store client data, mappings, and output |
-| **Big Data Processing** | Microsoft Fabric (Spark) | Execute PySpark transformations at scale (1-10GB files) |
-| **Code Cache** | Cosmos DB | Store approved transformations for reuse |
-| **Audit Logging** | Azure Monitor + Immutable Blob Storage | Compliance trail for regulatory requirements |
-| **Validation** | Customer's Existing System | Data quality checks (completeness, accuracy) |
+| **Big Data Processing** | Azure Databricks (Jobs Compute) | Execute PySpark transformations at scale (1-10GB files) |
+| **Code Cache + Agent State** | Cosmos DB (serverless) | Runtime cache for transformations; persist agent conversation/thread state |
+| **Approved Code Repository** | Azure DevOps Repos | Final approved PySpark code stored for audit trail and version history |
+| **Audit Logging** | Azure Monitor + OpenTelemetry | Compliance trail for regulatory requirements (built-in Agent Framework tracing) |
+| **Audit Storage** | Immutable Blob Storage | Immutable record of approvals, generated code, and execution history |
+| **Integrity Checks** | Agent-driven (deterministic scripts) | Automated validation of output before surfacing to human reviewer |
 
 ### Architecture Flow
 
-**Phase 1: Analysis (AI-Powered)**
-1. Agent checks Cosmos DB cache using hash(client_id + mapping + schema)
-2. **Cache Hit**: Retrieve existing PySpark → Skip to Phase 3
-3. **Cache Miss**: Parse mapping spreadsheet, sample 100 rows from data, generate pseudocode
+**Phase 1: Cache Check**
+1. Agent receives trigger (manual or scheduled) with client_id and mapping path
+2. Agent checks Cosmos DB cache using `hash(client_id + mapping_content + schema_fingerprint)`
+3. **Cache Hit**: Retrieve existing approved PySpark → Skip to Phase 4 (Execution)
+4. **Cache Miss**: Continue to Phase 2
 
-**Phase 2: Human Review (Conversational)**
-4. Display transformation pseudocode to user
-5. User provides plain English feedback (e.g., "Add validation for negative values")
-6. Agent iterates on pseudocode until user approves
-7. Log approval action to immutable storage (compliance requirement)
+**Phase 2: Data Profiling & Pseudocode Generation (AI-Powered)**
+5. Agent reads mapping spreadsheet from ADLS (via custom tool)
+6. Agent samples first 100 rows from source data on ADLS (via custom tool)
+7. Agent profiles the data: column types, null rates, value distributions, anomalies
+8. Agent generates transformation pseudocode in plain English based on mapping + profile
+9. Agent presents pseudocode to human reviewer for approval
 
-**Phase 3: Execution**
-8. Agent generates production PySpark from approved pseudocode
-9. Store in Cosmos DB cache for future runs
-10. Submit job to Fabric Spark cluster (F8 or F16 capacity)
-11. Spark processes 10GB data from ADLS, writes transformed output
+**Phase 3: Human Review of Pseudocode (Conversational)**
+10. Human reviewer sees pseudocode description (not PySpark — plain English)
+11. Reviewer provides feedback in plain English (e.g., "Account numbers should be zero-padded to 10 digits")
+12. Agent iterates on pseudocode incorporating feedback
+13. Reviewer approves final pseudocode
+14. Approval logged to immutable blob storage (compliance requirement)
+15. Agent workflow checkpoints state (Agent Framework built-in checkpointing)
 
-**Phase 4: Validation**
-12. Customer's existing deterministic validation system checks output
-13. **If pass**: Load to Azure SQL (standardized output tables)
-14. **If fail**: Feedback loop returns to Phase 2 for refinement
+**Phase 4: Code Generation & Execution (with Retry Logic)**
+16. Agent generates production PySpark code from approved pseudocode
+17. Store PySpark + pseudocode in Cosmos DB cache and commit to ADO Repos
+18. Agent submits Spark job to Azure Databricks (Jobs Compute cluster)
+19. Spark reads full dataset from ADLS, applies transformations, writes output to ADLS
+20. **If execution fails**: Pass error log back to agent → agent diagnoses and fixes PySpark → re-submit (retry up to 3 times)
+
+**Phase 5: Agent Self-Verification (Integrity Checks — Deterministic)**
+21. Reviewer script (deterministic, not AI) runs automated integrity checks on the output:
+    - **Row count validation**: Output rows vs. expected count from source
+    - **Schema conformance**: All required columns present with correct types
+    - **Null check**: No unexpected nulls in required fields
+    - **Value range validation**: Numeric fields within expected bounds
+    - **Referential integrity**: Foreign key relationships preserved
+    - **Sample comparison**: Spot-check transformed values against source + mapping rules
+22. **If checks fail**: Pass error log back to agent → agent diagnoses the issue, regenerates/fixes PySpark, re-executes (loop back to step 16, up to 3 total tries)
+23. **If both execution AND checks pass**: Continue to Phase 6
+24. **If fails after 3 tries**: Show failure message to auditor with error details
+
+**Phase 6: Human Final Review (Auditor Reviews Output)**
+25. Agent presents results to auditor **only after all integrity checks pass**:
+    - Summary of transformation (row counts, column mappings applied)
+    - Integrity check report (all checks passed)
+    - Sample of transformed output (first N rows)
+26. Auditor reviews the **output data** (not the PySpark code — auditors are Excel users, not developers)
+27. **If output is acceptable**: Auditor approves → approval logged to immutable storage
+28. **If output is not acceptable**: Auditor provides feedback → **loop back to Phase 3 (pseudocode revision)** → agent revises pseudocode → regenerates code → re-executes. The entire pipeline (Phases 3-6) is repeatable.
+29. On final approval: Output loaded to Azure SQL (standardized output tables)
+30. Cache entry updated with success status and execution metadata
 
 **Scale Targets:**
-- Normal operations: 300-400 transformations/month
-- Audit busy season: 1,000+ transformations/month
-- Annual: ~18,000 transformations across 3,000 clients
+- Normal operations: ~1,250 transformations/month (3,000 clients × 5 runs/year ÷ 12)
+- Audit busy season (Feb-April): potentially higher
+- Annual: ~15,000 transformations across 3,000 clients
 
 ---
 
 ## Detailed Design
 
-### 1. AI Agent Core (GitHub Copilot SDK)
+### 1. AI Agent Runtime (Microsoft Agent Framework)
 
-**Purpose:** Orchestrate the entire pipeline using AI-powered planning and code generation.
+**Purpose:** Orchestrate the entire pipeline using AI-powered planning, tool calling, and code generation.
 
-**Capabilities:**
-- Analyze mapping spreadsheets and data samples
-- Generate pseudocode descriptions
-- Convert pseudocode to executable PySpark
-- Manage multi-step workflows
-- Stream progress updates
+**Why Microsoft Agent Framework (not GitHub Copilot SDK):**
+- GitHub Copilot SDK remains in preview with uncertain GA timeline — too risky for customer's production deadline
+- Agent Framework merges AutoGen + Semantic Kernel into a single production-grade SDK
+- Azure AI Foundry Agent Service (hosted runtime) is already GA as of May 2025
+- Agent Framework Python SDK in public preview, GA targeted Q1 2026
+- No platform fee — pure consumption pricing via Azure OpenAI
+- 10,000+ organizations already using Foundry Agent Service in production (KPMG, BMW, Commerzbank)
+- Native workflow checkpointing for human-in-the-loop approval flows
+- Built-in OpenTelemetry tracing for audit/compliance
+- MCP (Model Context Protocol) support for custom tools
+- **Note:** Agent Framework can wrap Copilot SDK as a backend agent type (`GitHubCopilotAgent`) if Copilot SDK reaches GA later — migration path preserved
 
-**Implementation:**
+**Implementation Pattern:**
 
+```python
+from agent_framework.azure import AzureOpenAIResponsesClient
+from agent_framework import ChatAgent, MCPStdioTool
+from azure.identity import DefaultAzureCredential
 
-**Key Features:**
-- Custom Tools: Data profiling, mapping parsing, validation
-- Multi-Turn Conversations: Iterative refinement with human feedback
-- Streaming: Real-time updates to review interface
-- Context Management: Maintains state across analysis and generation phases
+# Initialize with Managed Identity (no API keys)
+client = AzureOpenAIResponsesClient(
+    credential=DefaultAzureCredential(),
+    azure_endpoint="https://<resource>.openai.azure.com",
+    model="gpt-4o",
+)
+
+# Create the data engineering agent
+agent = client.as_agent(
+    name="DataEngineeringAgent",
+    instructions="""You are a data engineering agent that:
+    1. Profiles source data on ADLS
+    2. Analyzes mapping spreadsheets
+    3. Generates transformation pseudocode for human review
+    4. Converts approved pseudocode to PySpark
+    5. Validates output integrity before presenting to reviewer
+    """,
+)
+
+# Attach custom MCP tools for ADLS data access
+async with (
+    MCPStdioTool(name="adls-tools", command="python", args=["mcp_adls_server.py"]) as adls,
+    MCPStdioTool(name="databricks-tools", command="python", args=["mcp_databricks_server.py"]) as databricks,
+    agent,
+):
+    result = await agent.run(
+        "Profile the data at adls://data/CLIENT_001/transactions.csv "
+        "and analyze the mapping at adls://mappings/CLIENT_001/mapping_v1.xlsx",
+        tools=[adls, databricks],
+    )
+```
+
+**Key Capabilities:**
+- **Custom Tools via MCP**: Data profiling, mapping parsing, Spark job submission, integrity checks (stdio, HTTP, or WebSocket transports)
+- **Workflow Checkpointing**: Pause for human approval, persist state to Cosmos DB, resume after review
+- **Multi-Turn Conversations**: Iterative pseudocode refinement with human feedback
+- **Streaming**: Real-time progress via `run_stream()` and `AgentRunUpdateEvent`
+- **Agent State Persistence**: Conversation history stored in Cosmos DB (`ChatMessageStore`)
+- **OpenTelemetry Tracing**: Every agent action traced for audit compliance (integrated with Azure Monitor)
+- **Model Flexibility**: Swap between GPT-4o (complex analysis), GPT-4o-mini (simple tasks) without code changes
+
+**Custom MCP Tools (to be built):**
+
+| Tool | Purpose | Phase Used |
+|------|---------|------------|
+| `read_mapping_spreadsheet` | Parse Excel mapping file from ADLS | Phase 2 |
+| `sample_source_data` | Read first N rows from source file on ADLS | Phase 2 |
+| `profile_data` | Column types, null rates, distributions, anomalies | Phase 2 |
+| `submit_spark_job` | Submit PySpark to Databricks via Jobs API | Phase 4 |
+| `check_spark_job_status` | Poll Databricks job completion | Phase 4 |
+| `read_spark_output` | Read output data for validation | Phase 5 |
+| `run_integrity_checks` | Row counts, schema, nulls, ranges, referential integrity | Phase 5 |
+| `write_to_cache` | Store approved code in Cosmos DB | Phase 4 |
+| `read_from_cache` | Retrieve cached transformations | Phase 1 |
+| `commit_to_ado_repo` | Commit approved PySpark + pseudocode to ADO Repos | Phase 4 |
 
 ---
 
 ### 2. Authentication & Authorization
 
-#### Container App → ADLS Access
-**Method:** Azure Managed Identity with RBAC roles
+All authentication uses **Azure Managed Identity** — no API keys or secrets in code.
+
+#### Agent Runtime → Azure OpenAI
+**Method:** Managed Identity with `Cognitive Services OpenAI User` RBAC role
+- Agent Framework uses `DefaultAzureCredential` — automatically picks up managed identity from AKS pod identity or Function App identity
+- No API key management required
+
+#### Agent Runtime → ADLS Access
+**Method:** Managed Identity with RBAC roles
 - `Storage Blob Data Reader` - Read client data and mappings
 - `Storage Blob Data Contributor` - Write output data
 
-#### Container App → Fabric Access
-**Method:** Managed Identity with Workspace Contributor role
-- Submit Spark jobs via Fabric REST API
+#### Agent Runtime → Databricks Access
+**Method:** Managed Identity with Contributor role on Databricks workspace
+- Submit Spark jobs via Databricks Jobs API
 - Monitor job execution
 
-#### Fabric → ADLS
-- Native OneLake integration
-- Can access external ADLS with workspace identity
+#### Agent Runtime → Cosmos DB
+**Method:** Managed Identity with `Cosmos DB Built-in Data Contributor` role
+- Read/write code cache entries
+- Store agent thread/conversation state (Agent Framework `ChatMessageStore`)
+
+#### Agent Runtime → Azure DevOps Repos
+**Method:** Managed Identity or service principal with `Contributor` role on the code repository
+- Commit approved PySpark code to designated repo
+- Create branches/PRs for audit trail
+
+#### Databricks → ADLS
+- Mount ADLS via service principal or Unity Catalog external location
+- Or use notebook-scoped credentials with Managed Identity passthrough
 
 ---
-- OR mount ADLS with service principal
-- OR use notebook-scoped credentials
 
-**Fabric:**
-- Native OneLake integration (no extra config needed)
-- Can also access external ADLS with workspace identity
+### 3. Code Storage & Caching
 
----
+**Purpose:** Avoid regenerating transformations when input structure hasn't changed, while maintaining a versioned audit trail of all approved code.
 
-### 3. Code Caching & Deterministic Re-runs
+**Dual Storage Architecture:**
 
-**Purpose:** Avoid regenerating transformations when input structure hasn't changed.
-
-**Architecture:**
+The customer requires final approved code to reside in **Azure DevOps Repos** for audit trail and version history. **Cosmos DB** serves as the runtime cache for fast lookups during execution.
 
 ```
-┌─────────────────────────────────────────────┐
-│  Code Cache (Azure Storage / Cosmos DB)     │
-│                                              │
-│  Key: hash(client_id + mapping + schema)    │
-│  Value: {                                    │
-│    "pseudocode": "...",                      │
-│    "pyspark_code": "...",                    │
-│    "created_at": "2026-01-20T...",           │
-│    "status": "approved",                     │
-│    "execution_count": 42,                    │
-│    "last_run_success": true                  │
-│  }                                           │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  Runtime Cache (Cosmos DB - Serverless)          │
+│                                                   │
+│  Key: hash(client_id + mapping + schema)         │
+│  Value: {                                         │
+│    "pseudocode": "...",                           │
+│    "pyspark_code": "...",                         │
+│    "ado_repo_path": "clients/CLIENT_001/v3.py",  │
+│    "created_at": "2026-01-20T...",                │
+│    "status": "approved",                          │
+│    "execution_count": 42,                         │
+│    "last_run_success": true                       │
+│  }                                                │
+└───────────────────────┬─────────────────────────-─┘
+                        │ Points to
+┌───────────────────────▼─────────────────────────-─┐
+│  Approved Code Repository (Azure DevOps Repos)    │
+│                                                    │
+│  Structure:                                        │
+│  └── clients/                                      │
+│      └── CLIENT_001/                               │
+│          ├── pseudocode_v1.md                       │
+│          ├── transform_v1.py                        │
+│          ├── pseudocode_v2.md  (schema change)      │
+│          └── transform_v2.py                        │
+│                                                    │
+│  Benefits:                                         │
+│  - Full git history for audit trail                │
+│  - Version control for all transformations         │
+│  - Legal hold / compliance retention               │
+│  - Familiar workflow for specialists               │
+└────────────────────────────────────────────────────┘
 ```
 
-**Cache Key Generation:**
-
+**ADO Repos Workflow:**
+- Agent commits approved code via automated PR (no manual code review required — auditor already approved the pseudocode/output)
+- Each client gets a directory with versioned pseudocode + PySpark
+- Commit message includes: client_id, approver, transformation hash, timestamp
+- Branch strategy TBD: direct commits to main vs. per-client branches
 
 **Cache Lookup Flow:**
-
-
+1. Generate key: `hash(client_id + mapping_content + schema_fingerprint)`
+2. Check Cosmos DB cache
+3. **Cache Hit**: Retrieve PySpark code → skip AI processing → execute on Spark
+4. **Cache Miss**: Full pipeline (profile → pseudocode → review → code gen)
+5. On approval: Write to both Cosmos DB cache AND ADO Repos
 
 **Cache Invalidation:**
 - Manual invalidation via UI (user marks cache as stale)
 - Automatic when mapping file changes
 - Automatic when data schema changes beyond tolerance threshold
 - Time-based expiry (optional, e.g., 90 days)
-
-**Storage Options:**
-
-| Option | Pros | Cons | Best For |
-|--------|------|------|----------|
-| **Azure Blob Storage** | Simple, cheap, good for large code | Requires custom indexing | Small to medium scale |
-| **Cosmos DB** | Fast lookups, built-in indexing, TTL | Higher cost | Production at scale |
-| **Azure Table Storage** | Low cost, simple key-value | Limited query capabilities | Small scale |
-
-**Recommendation:** Start with Cosmos DB for production-grade caching with fast lookups.
 
 ---
 
@@ -246,38 +397,135 @@ graph TD
 **End-to-End Process:**
 
 ```
-1. TRIGGER (Manual/Scheduled)
-   ↓
-2. READ mapping + SAMPLE data (Container App)
-   ↓
-3. GENERATE cache key
-   ↓
-4. CHECK cache
-   ├─ HIT → Execute cached code ──────────────┐
-   │                                          │
-   └─ MISS → Continue to analysis            │
-      ↓                                       │
-5. AI AGENT analyzes                          │
-   ↓                                          │
-6. GENERATE pseudocode                        │
-   ↓                                          │
-7. HUMAN REVIEW (approval interface)          │
-   ├─ REJECT → Loop back to step 5            │
-   └─ APPROVE                                 │
-      ↓                                       │
-8. AI AGENT generates PySpark                 │
-   ↓                                          │
-9. SAVE to cache                              │
-   ↓                                          │
-10. SUBMIT job to Spark cluster ←────────────┘
+1.  TRIGGER (Manual/Scheduled)
     ↓
-11. MONITOR execution
+2.  READ mapping + SAMPLE data (Agent Runtime / MCP tools)
     ↓
-12. VALIDATE output
+3.  GENERATE cache key: hash(client_id + mapping_content + schema_fingerprint)
     ↓
-13. UPDATE cache with success/failure
+4.  CHECK cache (Cosmos DB)
+    ├─ HIT → Execute cached PySpark ──────────────────────────────┐
+    │                                                             │
+    └─ MISS → Continue to profiling                               │
+       ↓                                                          │
+5.  PROFILE data (column types, nulls, distributions, anomalies)  │
+    ↓                                                             │
+6.  GENERATE pseudocode (plain English transformation plan)       │
+    ↓                                                             │
+7.  AUDITOR REVIEW of pseudocode (conversational)                 │
+    ├─ FEEDBACK → Agent revises pseudocode (loop back to 6)       │
+    └─ APPROVE → Log approval to immutable storage                │
+       ↓                                                          │
+8.  CHECKPOINT state (Agent Framework persistence)                │
+    ↓                                                             │
+9.  GENERATE PySpark from approved pseudocode                     │
+    ↓                                                             │
+10. SAVE to Cosmos DB cache + COMMIT to ADO Repos                 │
+    ↓                                                             │
+11. SUBMIT Spark job to Databricks ←──────────────────────────────┘
     ↓
-14. NOTIFY user (email/dashboard)
+12. MONITOR execution (poll Databricks Jobs API)
+    ↓
+13. EXECUTION SUCCEEDED?
+    ├─ NO  → Pass error log to agent → fix PySpark → re-submit
+    │        (retry up to 3 times, then fail to auditor)
+    └─ YES → Continue
+       ↓
+14. REVIEWER SCRIPT (deterministic integrity checks):
+    ├─ Row count validation
+    ├─ Schema conformance
+    ├─ Null checks on required fields
+    ├─ Value range validation
+    ├─ Referential integrity
+    └─ Sample spot-check against mapping rules
+    ↓
+15. CHECKS PASS?
+    ├─ NO  → Pass error log to agent → fix PySpark → re-execute
+    │        (combined retries: max 3 total across steps 13+15)
+    └─ YES → Continue
+       ↓
+16. AUDITOR FINAL REVIEW (reviews OUTPUT, not code):
+    ├─ Transformation summary
+    ├─ Integrity check report
+    └─ Sample output rows
+    ↓
+17. AUDITOR APPROVES OUTPUT?
+    ├─ NO  → Feedback → LOOP BACK TO STEP 6 (revise pseudocode)
+    │        Entire pipeline 6→17 is repeatable
+    └─ YES → Log approval to immutable storage
+       ↓
+18. LOAD to Azure SQL (standardized output tables)
+    ↓
+19. UPDATE cache with success metadata
+    ↓
+20. NOTIFY auditor (email/dashboard)
+```
+
+**Workflow Checkpointing:**
+
+The Microsoft Agent Framework provides built-in workflow checkpointing, which is critical for our human-in-the-loop approval flow. At steps 7 and 16, the agent workflow pauses and persists its full state (conversation history, generated artifacts, current phase) to Cosmos DB. When the auditor returns with approval or feedback, the workflow resumes from the exact checkpoint without re-running prior steps.
+
+```python
+from agent_framework.workflows import Workflow, checkpoint
+
+MAX_RETRIES = 3
+
+class TransformationWorkflow(Workflow):
+    async def run(self, client_id: str, mapping_path: str):
+        # Phase 2: Profile + generate pseudocode
+        pseudocode = await self.agent.run(f"Profile and generate pseudocode for {client_id}")
+
+        # Outer loop: auditor can reject output and revise pseudocode
+        while True:
+            # Phase 3: Pause for auditor review of pseudocode
+            approval = await checkpoint("pseudocode_review", {
+                "pseudocode": pseudocode,
+                "client_id": client_id,
+            })
+
+            if not approval.approved:
+                pseudocode = await self.agent.run(f"Revise pseudocode: {approval.feedback}")
+                continue  # Re-checkpoint for another review
+
+            # Phase 4-5: Generate, execute, validate (with retry logic)
+            for attempt in range(MAX_RETRIES):
+                pyspark_code = await self.agent.run(f"Generate PySpark from: {pseudocode}")
+                execution_result = await self.execute_spark_job(pyspark_code)
+
+                if not execution_result.success:
+                    # Pass error log back to agent for diagnosis
+                    pyspark_code = await self.agent.run(
+                        f"Fix PySpark code. Error log: {execution_result.error_log}"
+                    )
+                    continue
+
+                # Run deterministic integrity checks (reviewer script)
+                check_result = await self.run_integrity_checks(execution_result.output)
+                if check_result.passed:
+                    break
+                # Pass check failures back to agent
+                pyspark_code = await self.agent.run(
+                    f"Fix PySpark code. Integrity check failures: {check_result.errors}"
+                )
+            else:
+                # After 3 failures, show error to auditor
+                await checkpoint("failure_review", {"error": "Max retries exceeded"})
+                return
+
+            # Phase 6: Pause for auditor final review (output, not code)
+            final_approval = await checkpoint("final_review", {
+                "integrity_report": check_result,
+                "sample_output": sample_rows,
+            })
+
+            if final_approval.approved:
+                break  # Success — proceed to load
+            else:
+                # Auditor rejected output → revise pseudocode
+                pseudocode = await self.agent.run(
+                    f"Revise pseudocode based on output feedback: {final_approval.feedback}"
+                )
+                # Loop back to pseudocode review
 ```
 
 ---
@@ -292,29 +540,38 @@ graph TD
 - Data: `ADLS://data/NEWCLIENT_001/transactions.csv` (5GB)
 
 **Steps:**
-1. Container App reads mapping + samples first 100 rows
-2. Generates cache key: `a8f3d9e2b1c4...` (no match in cache)
-3. Copilot SDK agent analyzes and generates pseudocode:
+1. Agent reads mapping spreadsheet from ADLS (via `read_mapping_spreadsheet` MCP tool)
+2. Agent samples first 100 rows from source data (via `sample_source_data` MCP tool)
+3. Generates cache key: `a8f3d9e2b1c4...` (no match in cache)
+4. Agent profiles the data: identifies column types, null patterns, value distributions
+5. Agent generates pseudocode transformation plan:
    ```
    ## Transformation Plan
-   
-   Source: transactions.csv
+
+   Source: transactions.csv (5GB, 12M rows)
    Target: standardized_transactions.parquet
-   
+
+   Data Profile:
+   - 15 columns, 0 completely null columns
+   - "Transaction Date" has 3 formats detected (MM/DD/YYYY, YYYY-MM-DD, DD-Mon-YY)
+   - "Amount" range: -50,000 to 999,999 (1.2% negative values)
+
    Mappings:
-   - "Account Number" → "R_IDFUND" (string, no transform)
-   - "Transaction Date" → "T_DATE" (convert MM/DD/YYYY → YYYY-MM-DD)
-   - "Amount" → "T_AMOUNT" (decimal, multiply by 1000)
+   - "Account Number" → "R_IDFUND" (string, zero-pad to 10 digits)
+   - "Transaction Date" → "T_DATE" (normalize all formats → YYYY-MM-DD)
+   - "Amount" → "T_AMOUNT" (decimal, multiply by 1000, flag negatives)
    ...
    ```
-4. Human reviews and approves via web UI
-5. Copilot SDK generates PySpark code
-6. Code saved to cache with key `a8f3d9e2b1c4...`
-7. Job submitted to Databricks
-8. PySpark reads full 5GB from ADLS, transforms, writes output
-9. Output: `ADLS://output/NEWCLIENT_001/standardized_transactions.parquet`
+6. Human reviewer approves pseudocode (or provides feedback for iteration)
+7. Agent generates PySpark code from approved pseudocode
+8. Code saved to Cosmos DB cache with key `a8f3d9e2b1c4...`
+9. Spark job submitted to Azure Databricks
+10. PySpark reads full 5GB from ADLS, transforms, writes output
+11. Agent runs integrity checks: row count matches (12M in, 12M out), schema valid, no unexpected nulls
+12. Agent presents results + integrity report to human for final approval
+13. Output: `ADLS://output/NEWCLIENT_001/standardized_transactions.parquet`
 
-**Time:** ~30 minutes (10 min analysis + 5 min review + 15 min execution)
+**Time:** ~30 minutes (10 min profiling + analysis, 5 min pseudocode review, 10 min execution + checks, 5 min final review)
 
 ### Scenario 2: Repeat Run (No Changes)
 
@@ -323,14 +580,16 @@ graph TD
 - Same mapping and data structure as Scenario 1
 
 **Steps:**
-1. Container App reads mapping + samples first 100 rows
+1. Agent reads mapping + samples first 100 rows
 2. Generates cache key: `a8f3d9e2b1c4...` (MATCH!)
-3. Retrieves cached PySpark code
-4. Skips analysis and review (goes straight to execution)
-5. Job submitted to Databricks
+3. Retrieves cached PySpark code from Cosmos DB
+4. Skips profiling, pseudocode, and human review (straight to execution)
+5. Spark job submitted to Databricks
 6. Transformation runs
+7. Agent runs integrity checks on output (automated)
+8. **If checks pass**: Output loaded directly (no human review needed for cache hits with passing checks)
 
-**Time:** ~15 minutes (execution only)
+**Time:** ~15 minutes (execution + automated checks only)
 
 ### Scenario 3: Client Changes Mapping
 
@@ -340,13 +599,13 @@ graph TD
 - Data structure unchanged
 
 **Steps:**
-1. Container App reads mapping + samples data
-2. Generates cache key: `b7e4c8a1f2d9...` (no match - different mapping)
-3. Full analysis + review + code generation cycle
-4. New cache entry created
-5. Execution
+1. Agent reads mapping + samples data
+2. Generates cache key: `b7e4c8a1f2d9...` (no match — different mapping)
+3. Full cycle: profiling → pseudocode → human review → code gen → execution → integrity checks → final review
+4. New cache entry created in Cosmos DB
+5. Old cache entry preserved (mapping_v1 key still valid if client reverts)
 
-**Time:** ~30 minutes (same as first-time)
+**Time:** ~30 minutes (same as first-time onboarding)
 
 ---
 
@@ -368,7 +627,7 @@ graph TD
    - Rate limit AI API calls
 
 4. **Network Security:**
-   - Container App in VNet with private endpoints
+   - Agent runtime in VNet with private endpoints (AKS cluster networking or Function App VNet integration)
    - Firewall rules on ADLS and Spark clusters
    - No public internet access for data paths
 
@@ -385,10 +644,11 @@ graph TD
 - Data volume processed
 
 **Logging:**
-- Application Insights for Container App logs
-- Spark cluster logs (Databricks/Fabric)
+- Application Insights for agent runtime logs (AKS/Functions)
+- OpenTelemetry traces from Agent Framework (every agent action, tool call, and LLM invocation)
+- Spark cluster logs (Databricks)
 - Audit trail for all transformations
-- Human review decisions
+- Human review decisions and approval timestamps
 
 **Alerting:**
 - Job failures
@@ -400,10 +660,11 @@ graph TD
 
 ## Cost Optimization
 
-1. **Cache Hits:** Avoid regenerating transformations (saves AI tokens + analysis time)
-2. **Right-Size Clusters:** Auto-scale based on data volume
-3. **Spot Instances:** Use for non-critical workloads (Databricks)
-4. **Data Sampling:** Only 100 rows for analysis (reduces processing)
+1. **Cache Hits:** Avoid regenerating transformations (saves AI tokens + Spark compute time)
+2. **Right-Size Clusters:** Databricks autoscaling (1-5 workers) based on data volume
+3. **Spot Instances:** 40-80% discount on Databricks worker VMs for non-critical jobs
+3. **Model Tiering:** Use GPT-4o-mini for simple tasks (profiling, cache lookups), GPT-4o for complex analysis (pseudocode, PySpark generation)
+4. **Data Sampling:** Only 100 rows for analysis (reduces processing and LLM token costs)
 5. **Batch Processing:** Group multiple clients in off-peak hours
 
 ---

@@ -1,314 +1,308 @@
 # Customer Business Requirements - Gap Analysis
 
-**Date:** January 26, 2026  
-**Source:** Customer call transcript (January 19, 2026)
+**Date:** February 6, 2026
+**Source:** Customer call transcripts — January 19, 2026 and January 30, 2026
 
 **Note:** This analysis focuses on business requirements and outcomes, not customer's proposed implementation details. As architects, we define the technical approach.
 
 ---
 
-## Critical Business Requirements from Transcript
+## Critical Business Requirements from Transcripts
 
-### 1. **Scale & Volume** ✅ COVERED
-**Requirement:**
+### 1. **Self-Service for Auditors** ✅ COVERED
+**Requirement (Jan 30 — TK):**
+> "The main objective from the business sponsors is to make this data engineering self-service for auditors and reduce the dependency on the specialist. Replace the specialist with the agent."
+
+- **Auditors** (Excel power users) should be able to provide data dictionary/inputs and iterate with the agent
+- Agent replaces the **specialist** role (data engineers who write PySpark)
+- Auditors review pseudocode and output — NOT code
+- Feedback loop must be conversational and repeatable
+
+**Design Coverage:** ✅ Addressed in v2.0
+- Problem statement frames auditor vs. specialist role change
+- Pseudocode review in plain English
+- Full loop-back from output review to pseudocode revision
+
+---
+
+### 2. **Scale & Volume** ✅ COVERED
+**Requirement (Jan 19, confirmed Jan 30):**
 - 3,000 clients currently in DNAV
-- 4-6 engagements per client per year
-- Peak load: 500-1,000 runs during audit busy season (Feb-April)
+- 5 engagements per client per year (updated from 4-6)
+- ~1,250 runs/month baseline (3,000 × 5 ÷ 12)
+- Peak load during audit busy season (Feb-April): potentially higher
 - Individual file sizes: 1-10 GB per client
-- Data already in ADLS Gen2 (no uploads needed)
+- Data already in ADLS Gen2
 
-**Design Coverage:** ✅ Addressed
-- Cost analysis includes 100 runs/month scenario
-- Fabric F8/F16 capacity sizing covers this volume
-- ADLS as source is the baseline assumption
+**Volume estimate (Jan 30 — Monty):**
+> "3,000 clients a year, five runs per client on average, 15,000 / 12 would be a little over 1,000 runs a month, like 1,200-1,250."
 
-**Gap:** ⚠️ Should add peak capacity planning for 1,000 runs/month scenario
-
----
-
-### 2. **File Dependency Handling** ✅ COVERED
-**Business Requirement:**
-- Some output files may have dependencies on other outputs
-- System must execute transformations in correct order
-- Must detect and prevent circular dependencies
-
-**Design Coverage:** ⚠️ Not explicitly addressed
-- Could be handled by execution engine
-- Or by preprocessing step
-
-**Gap:** Should add dependency resolution logic (implementation detail - we decide how)
+**Design Coverage:** ✅ Updated
+- Design doc scale targets reflect ~1,250/month
+- Cost analysis updated with realistic volume scenarios
 
 ---
 
-### 3. **Repeatability & Caching** ✅ COVERED
-**Requirement:**
+### 3. **Technology Stack — Use Existing Services** ⚠️ UPDATED (Jan 30)
+**Requirement (Jan 30 — TK):**
+> "There is strong pushback from our CTO organization to limit our tech stack. For each use case, I cannot introduce a new service."
+
+**Customer's existing tech stack:**
+| Service | Role |
+|---------|------|
+| .NET | Application platform |
+| Azure SQL | Primary database |
+| Azure Service Bus | Async messaging |
+| Azure Functions (Durable) | Compute / long-running workflows |
+| AKS | Container orchestration |
+| Azure Databricks | Spark notebooks (existing) |
+| ADLS Gen2 | Data lake storage |
+
+**Key change from Jan 19:** Customer previously seemed open to Container Apps. Jan 30 transcript makes clear they **will not introduce Container Apps** initially. Must use AKS or Durable Functions.
+
+**Design Coverage:** ✅ Updated
+- Agent runtime: AKS or Azure Durable Functions
+- Container Apps noted as future roadmap option
+- Customer tech stack documented in design
+
+**Note (Jan 19):** Customer mentioned "challenges with AKS for big data" — this was about Spark processing (solved by Databricks), not about agent hosting.
+
+---
+
+### 4. **Repeatability & Caching** ✅ COVERED
+**Requirement (Jan 19 + Jan 30):**
 - Most clients run quarterly with same schema → rerun same PySpark without AI
 - Only regenerate when client changes data schema
 - Save PySpark + pseudocode for audit trail
 - Cache should enable deterministic re-runs
+- **Entire pipeline (pseudocode → code gen → execution → review) must be repeatable** (Jan 30)
 
 **Design Coverage:** ✅ Fully addressed
 - Cosmos DB caching with hash(client_id + mapping + schema)
-- Cache hit rate: 70% target
-- Deterministic execution for cached transformations
+- Full loop-back from output review to pseudocode revision
+- Target cache hit rate: 70% (after initial quarter)
 
 ---
 
-### 4. **Human-in-the-Loop Review** ⚠️ NEEDS DETAIL
-**Business Requirement:**
-- **User Persona:** Excel power users, NOT Python developers
-- **What they review:** Pseudocode (plain English transformation logic)
-- **What they DON'T see:** PySpark code (technical implementation)
-- **Actions needed:** Approve, reject, or request modifications
-- **Why:** Regulatory compliance - humans must validate before production
+### 5. **Cold Start Quarter (0% Cache Hits)** ⚠️ NEW (Jan 30)
+**Requirement (Jan 30 — Monty):**
+> "In our first release, the first quarter, every single thing is going to be new. So it'll be basically 0 caches."
 
-**Design Coverage:** ⚠️ Mentioned conceptually, lacks implementation detail
-- Design mentions "Review Interface (Human-in-the-Loop)" in architecture
-- No specification of how Excel users will interact with system
+- Currently using Spark notebooks in Databricks + M code/Power Query
+- No existing PySpark scripts to migrate day one
+- Could potentially feed existing logic into pseudocode generation as a "nice add-on" (Monty)
+- First quarter = ~1,250 runs at 0% cache hit = maximum cost
 
-**Gap:** ⚠️ Need to define user experience and interface approach
+**Design Coverage:** ✅ Addressed in cost analysis
+- Added cold start Q1 scenario
+- Migration path noted as future optimization
 
 ---
 
-### 5. **Data Security & Privacy** ✅ COVERED
-**Requirement:**
-- Do NOT send actual client data to LLM (cost & security concern)
-- Only send metadata: data dictionaries, mapping spreadsheet
-- Optional: Send first 10-100 rows for schema inference (sample only)
-- Full 10GB data processed locally on Spark (not through LLM context)
+### 6. **Human-in-the-Loop Review** ⚠️ NEEDS UX DETAIL
+**Business Requirement (Jan 19 + Jan 30):**
+- **User Persona:** Auditors — Excel power users, NOT Python developers
+- **What they review:** Pseudocode (Phase 3) and output data (Phase 6)
+- **What they DON'T see:** PySpark code
+- **Actions needed:** Approve, reject, or request modifications via conversational feedback
+- **UI:** Entirely net new — must be built from ground up (confirmed Jan 30)
+- **Platform:** .NET (customer's platform)
+
+**Design Coverage:** ⚠️ Workflow is defined, but UI/UX not specified
+- Workflow checkpointing with auditor review is designed
+- Missing: Interface mockups, .NET integration approach
+
+**Gap:** Need to define review portal UX for Excel-level users
+
+---
+
+### 7. **Code Storage — ADO Repos** ⚠️ NEW (Jan 30)
+**Requirement (Jan 30 — TK):**
+> "Ultimate goal is all the codes should go to repos. For the audit trail or whatever the purpose."
+
+- Final approved PySpark code should be stored in **Azure DevOps Repos** (not just Cosmos DB)
+- Cosmos DB is acceptable as intermediate/runtime cache
+- ADO Repos provides: git history, version control, legal hold, audit trail
+- Open question: Who reviews PRs? Specialists? Or automated commits?
 
 **Design Coverage:** ✅ Addressed
-- Design specifies "Sample first 50-100 rows"
-- Data profiler tool samples data, doesn't send full dataset
-- PySpark executes on Fabric/Databricks, not in agent context
+- Dual storage: Cosmos DB (runtime cache) + ADO Repos (approved code)
+- `commit_to_ado_repo` MCP tool added
+- ADO auth via Managed Identity or service principal
 
 ---
 
-### 6. **Audit & Compliance Requirements** ❌ CRITICAL GAP
-**Business Context:**
-> "If we miss one misstatement during the audit review process... it will be huge lawsuits or penalties" - Thandava
+### 8. **Retry Logic (3 Tries)** ✅ COVERED (Jan 30)
+**Requirement (Jan 30 — Monty):**
+> "Multiple try or retry logic around the reviewer... if it fails after say three tries, then you just say here's the failure message."
 
-**Requirements:**
-- **Complete audit trail:** Every transformation must be traceable for legal holds
-- **Immutable archival:** All pseudocode + PySpark code stored permanently
-- **Deterministic validation:** Data quality checks cannot be AI-based (must be programmatic)
-- **TRC approval:** Technology Risk Controls team must have confidence (enterprise-grade reliability)
-- **Paper trail:** If audit misstatement occurs, need clear record of who approved what and when
-
-**Design Coverage:** ⚠️ Partially covered
-- Cosmos DB stores code for archival ✅
-- No audit logging infrastructure ❌
-- No compliance reporting ❌
-- No immutable storage policy ❌
-
-**Gap:** ❌ **This is a deal-breaker if not addressed properly**
-- Need comprehensive audit logging strategy
-- Need immutable storage with retention policies
-- Need compliance dashboard for TRC team
-
----
-
-### 7. **Technology Preferences** ✅ COVERED
-**Requirement:**
-- **Storage:** ADLS Gen2 (current infrastructure)
-- **Compute:** Prefer Fabric over Synapse (Synapse is legacy)
-  - They have Synapse experience but want to modernize
-  - Also open to Databricks
-- **Agent hosting:** Azure Container Apps (not AKS - they have "challenges with AKS for big data")
-- **Orchestration:** MCP for tool coordination
-- **Avoid:** AKS, Synapse (legacy), custom low-level orchestration
-
-**Design Coverage:** ✅ Fully aligned
-- ADLS Gen2 ✅
-- Microsoft Fabric (F8/F16) ✅
-- Container Apps mentioned ✅
-- MCP for orchestration ✅
-
----
-
-### 8. **Cost Optimization** ✅ COVERED
-**Business Requirement:**
-> "Pricing is the **key factor driver** for this solution to go live" - Thandava
-
-> "We don't want to send our client data to LLM, otherwise it will **blow up our cost**" - Thandava
-
-**Requirements:**
-- Must be cost-effective at scale (3,000 clients, 4-6 runs/year each)
-- Cannot process 10GB files through LLM (cost & technical impossibility)
-- Only send metadata + samples (10-100 rows max) to LLM
-- Cost must be predictable and optimized
+**Pattern:**
+1. Execute PySpark → if execution fails → pass error log to agent → retry
+2. If execution succeeds → run reviewer script (deterministic) → if fails → pass error log back
+3. After both succeed → human sees output
+4. After 3 total failures → show failure message to auditor
 
 **Design Coverage:** ✅ Fully addressed
-- Cost analysis: $7.92/run vs $800 manual (99% reduction)
-- LLM only processes metadata (not full data)
-- Caching reduces AI calls by 70%
-- Multiple cost scenarios documented
-
-**This is a strength of our design.**
+- 3-try retry with error log passback in workflow
+- Deterministic reviewer script (not AI)
+- Failure escalation to auditor after max retries
 
 ---
 
-### 9. **Enterprise Reusability** ✅ COVERED
-**Requirement:**
-- "It's going to be reusable at the APS level" (Audit & Assurance Practice Solutions)
-- Should work for any use case with: clean target dataset + client data + mapping info
-- Must be enterprise-level solution with quality gates
+### 9. **MCP Interest from Deloitte** ⚠️ NEEDS DOCUMENTATION
+**Requirement (Jan 30 — TK + Monty):**
+> "There's a great interest in MCP on the Deloitte side." - Monty
+
+- Customer wants MCP client/server called out explicitly in architecture
+- Want to know which Azure services have native MCP servers
+- TK: "Wherever it is required, just call that out server and client both"
+- MCP is NOT required everywhere — use where it makes sense (Dan's guidance)
+
+**Design Coverage:** ⚠️ MCP tools listed in design, but not mapped to Azure service availability
+- MCP tool table exists
+- Missing: Which Azure services offer MCP servers vs. direct API calls
+
+**Gap:** Add MCP server availability matrix for Azure services used in this solution
+
+---
+
+### 10. **Data Security & Privacy** ✅ COVERED
+**Requirement (Jan 19):**
+- Do NOT send actual client data to LLM (cost & security)
+- Only send metadata: data dictionaries, mapping spreadsheet
+- Sample first 10-100 rows for schema inference
+- Full data processed on Spark (not through LLM)
+
+**Design Coverage:** ✅ Addressed
+
+---
+
+### 11. **Audit & Compliance Requirements** ✅ COVERED
+**Business Context (Jan 19):**
+> "If we miss one misstatement during the audit review process... it will be huge lawsuits or penalties" - TK
+
+**Requirements:**
+- Complete audit trail for legal holds
+- Immutable archival of pseudocode + PySpark code
+- Deterministic validation (not AI-based)
+- TRC team confidence
+- Paper trail: who approved what, when
+
+**Design Coverage:** ✅ Addressed in v2.0
+- ADO Repos for versioned code history
+- Immutable Blob Storage for approvals and execution history
+- Azure Monitor + OpenTelemetry for agent action tracing
+- Deterministic reviewer script (not AI)
+
+---
+
+### 12. **Cost Optimization** ✅ COVERED
+**Requirement (Jan 19 + Jan 30):**
+> "Pricing is the key factor driver for this solution to go live" - TK
+
+- Must be cost-effective at ~1,250 runs/month
+- LLM cost sensitivity — Monty estimated low 5-figure range for GPT-5.2
+- Dan estimated $200-$8K for 600M tokens — noted cheaper model for code gen from pseudocode
+- Cost must be predictable and transparent per client
+
+**Design Coverage:** ✅ Updated cost analysis with realistic volumes
+
+---
+
+### 13. **POC Success Criteria** ❌ NEW DELIVERABLE NEEDED
+**Requirement (Jan 30 — TK):**
+> "The success criteria — how many engagements with the volume? Maybe 3 or 4 with various levels of complexities — low, medium, high."
+
+- 3-4 test engagements at varying complexity levels
+- Metrics: latency, scalability, quality
+- Detailed pricing for POC
+- Developer resources: TK + Monty + possibly 1 more
+
+**Design Coverage:** ❌ Not yet documented
+- Need new section or document defining POC success criteria
+
+---
+
+### 14. **Existing Code Migration** ⚠️ FUTURE CONSIDERATION
+**Context (Jan 30 — Monty):**
+> "Today we have a mixture of Spark notebooks in Databricks and M code and Power Query... day one there's not really a Python job equivalent."
+
+- No existing PySpark to migrate — all new generation
+- Could potentially feed existing logic/notebooks into pseudocode generation ("nice add-on")
+- Not blocking for POC, but would reduce cold start costs
+
+**Design Coverage:** Not addressed (low priority for POC)
+
+---
+
+### 15. **Enterprise Reusability** ✅ COVERED
+**Requirement (Jan 19):**
+- Reusable at APS level (Audit & Assurance Practice Solutions)
+- Architecture should be generic, not DNAV-specific
 - Five pillars: Performance, Scalability, Security, Reliability, Observability
 
-**Design Coverage:** ✅ Partially covered
-- Architecture is generic (not DNAV-specific)
-- Mentions "standardized output format" instead of "DNAV format"
-
-**Gap:** ⚠️ Should add section on "Extensibility & Reusability" for other APS use cases
+**Design Coverage:** ✅ Architecture is generic
 
 ---
 
-### 10. **Microsoft Foundry vs Custom** ⚠️ DECISION POINT
-**Transcript Context:**
-- Dan (Microsoft) suggested using Microsoft Foundry's out-of-the-box agent service
-- Would get 60-70% of functionality OOTB, customize remaining 30-40%
-- Benefits: Constant improvements, less maintenance, managed agent runtime
+### 16. **Agent Framework Decision** ✅ COVERED
+**Context (Jan 30):**
+- Dan presented Copilot SDK (just announced 2 weeks prior) with Agent Framework as backup
+- TK: "provide that alternate agent and also the documentation"
+- Monty: If Copilot SDK does MCP natively, separate MCP server not needed
 
-**Customer Response:**
-- Open to it if it meets scale/security requirements
-- Monty's POC already works with custom agents
-- Could "backport" existing agents into Foundry SDK
-
-**Design Coverage:** ✅ We chose GitHub Copilot SDK (similar concept to Foundry agents)
-- Copilot SDK provides production harness
-- Custom tools for data engineering specifics
-
-**Note:** Transcript was from Jan 19, we've since validated Copilot SDK (Jan 26)
+**Design Coverage:** ✅ Decision made
+- Agent Framework selected (Copilot SDK GA timeline risk)
+- Comparison documented in copilot-sdk-setup.md
+- Migration path preserved
 
 ---
 
 ## Summary: Design Document Coverage
 
-### ✅ **Fully Covered (8/10)**
-1. Scale & volume requirements
-2. Repeatability & caching strategy
-3. Data security (metadata only to LLM)
-4. Cost optimization
-5. Technology stack alignment
-6. Enterprise reusability vision
-7. Spark execution for big data
-8. GitHub Copilot SDK as agentic foundation
+### ✅ **Fully Covered (12/16)**
+1. Self-service for auditors
+2. Scale & volume (~1,250 runs/month)
+3. Repeatability & caching
+4. Cold start quarter (cost scenario)
+5. Code storage (Cosmos DB + ADO Repos)
+6. Retry logic (3 tries with error log passback)
+7. Data security (metadata only to LLM)
+8. Audit & compliance infrastructure
+9. Cost optimization
+10. Enterprise reusability
+11. Agent Framework decision
+12. Technology stack alignment (AKS/Durable Functions)
 
-### ⚠️ **Partially Covered - Needs Enhancement (2/10)**
-1. **Four-agent architecture:** Missing explicit orchestrator agent for dependency DAG
-2. **Human-in-the-loop UX:** Need to specify interface design for Excel users
+### ⚠️ **Partially Covered — Needs Enhancement (3/16)**
+1. **Human-in-the-loop UX:** Workflow defined, UI/UX not specified (need .NET integration plan)
+2. **MCP server availability:** MCP tools listed, but Azure service availability not mapped
+3. **Existing code migration:** Not addressed (future optimization for cold start reduction)
 
-### ❌ **Missing from Design (2 critical areas)**
-1. **Audit & Compliance Infrastructure:**
-   - Azure Monitor integration for traceability
-   - Immutable audit log storage
-   - Compliance reporting dashboard
-   
-2. **Peak Capacity Planning:**
-   - 1,000 runs/month busy season scenario
-   - Burst capacity handling
-   - Cost implications of peak load
-
----
-
-## Recommended Design Updates
-
-### Priority 1: Define Audit & Compliance Infrastructure (CRITICAL)
-**Why:** Deal-breaker for customer - regulatory compliance requirement
-
-**Add to design.md:**
-```
-Component: Audit & Compliance Layer
-
-1. Immutable Audit Storage
-   - Azure Storage with immutability policy (7-year retention)
-   - Stores: Pseudocode, PySpark code, approvals, execution logs
-   - Indexed by: client_id, transformation_id, timestamp, approver
-   
-2. Activity Logging
-   - Azure Monitor Application Insights
-   - Log every agent action: analysis, code generation, approval, execution
-   - Structured logs for compliance reporting
-   
-3. Compliance Dashboard
-   - Power BI dashboard for TRC team
-   - Metrics: Success rates, error trends, review times, audit trail queries
-   - Alerting for anomalies or failures
-```
-
-### Priority 2: Define Human Review User Experience
-```
-Component: Review Portal (Web UI)
-
-User Persona: Excel power users, not Python developers
-
-Features:
-- Display pseudocode in plain English
-- Side-by-side view: mapping spreadsheet + generated logic
-- Inline editing with syntax highlighting
-- Approve/Reject/Request Changes workflow
-- Comments and feedback capture
-- Version history for audit trail
-
-Tech Stack: React/FastAPI, hosted on Container App
-```
-
-**Add to design.md:**
-```
-Component: Dependency Resolution
-
-Business Requirement: Some output files depend on other outputs
-
-Approach:
-- Analyze all output requirements upfront
-- Build execution DAG (directed acyclic graph)
-- Check for circular dependencies
-- Execute transformations in topologically sorted order
-
-Implementation: Python-based (not LLM - deterministic logic)
-```
-
-### Priority 4: Add Peak Capacity Scenario to Cost Analysis
-```
-Scenario 4: Audit Busy Season (February-April)
-
-Volume: 1,000 runs/month (10x normal)
-Cache Hit Rate: 50% (lower due to schema changes)
-Fabric Capacity: F16 (2x F8) for 3 months
-
-Costs:
-- Fabric F16: $1,250/month x 3 = $3,750
-- Container Apps: $85/month x 3 = $255
-- ADLS: $60/month x 3 = $180 (2x normal due to burst)
-- Copilot: $39/month x 3 = $117
-- Cosmos DB: $15/month x 3 = $45 (10x normal)
-
-Total: $4,347 for 3-month busy season
-Per-run cost: $1.45 (still 99.8% cheaper than $800 manual)
-
-Recommendation: Use autoscaling Fabric capacity or burst to F32 if needed
-```
+### ❌ **Missing (1 deliverable)**
+1. **POC Success Criteria:** Need document defining 3-4 test engagements, complexity levels, metrics
 
 ---
 
 ## Action Items
 
-1. **Update design.md:**
-   - [ ] Add "Dependency Orchestrator" component section
-   - [ ] Add "Human Review Interface" detailed design
-   - [ ] Add "Audit & Compliance" section
-   - [ ] Update architecture diagram with 4-agent flow
+1. **Define POC success criteria:**
+   - [ ] Create `poc-success-criteria.md` with 3-4 test engagements, metrics, timeline
+   - [ ] Include detailed POC pricing
 
-2. **Update cost-analysis.md:**
-   - [ ] Add Scenario 4: Peak busy season (1,000 runs/month)
-   - [ ] Add autoscaling cost implications
+2. **Design human review UX:**
+   - [ ] Define review portal for Excel-level auditors
+   - [ ] Determine .NET integration approach (embed in existing DNAV platform)
 
-3. **Create new document:**
-   - [ ] `human-review-interface-design.md` with mockups/wireframes
+3. **Map MCP server availability:**
+   - [ ] Document which Azure services have native MCP servers
+   - [ ] Determine where MCP vs. direct API makes sense
 
 4. **Validation:**
-   - [ ] Review updates with customer before next meeting
-   - [ ] Confirm orchestrator logic matches Monty's POC approach
+   - [ ] Review updated design with customer
+   - [ ] Confirm AKS vs. Durable Functions compute preference
+   - [ ] Get mapping walkthrough recording from Dalton (or schedule new session)
+   - [ ] Get schema stability percentage from Mahesh (for cache hit rate projection)
 
 ---
 
@@ -316,20 +310,26 @@ Recommendation: Use autoscaling Fabric capacity or burst to F32 if needed
 
 **Key Customer Concerns (verbatim):**
 
-> "Pricing is the key factor driver for this solution to go live" - Thandava
+> "The main objective from the business sponsors is to make this data engineering self-service for auditors and reduce the dependency on the specialist." - TK (Jan 30)
 
-> "We don't want to send our client data to LLM, otherwise it will blow up our cost" - Thandava
+> "There is strong pushback from our CTO organization to limit our tech stack. For each use case, I cannot introduce a new service." - TK (Jan 30)
 
-> "It needs to be traceable and auditable" - Thandava  
+> "Ultimate goal is all the codes should go to repos. For the audit trail." - TK (Jan 30)
 
-> "If we miss one misstatement during the audit review process... it will be huge lawsuits or penalties" - Thandava
+> "Pricing is the key factor driver for this solution to go live" - TK (Jan 19)
 
-> "The power users, they are Excel users... they should be able to repeatable... tweak [the pseudocode]" - Thandava
+> "We don't want to send our client data to LLM, otherwise it will blow up our cost" - TK (Jan 19)
 
-> "We archive the spark code for tracing purpose auditory purpose... for legal hold or audit trail" - Thandava
+> "If we miss one misstatement during the audit review process... it will be huge lawsuits or penalties" - TK (Jan 19)
 
-**Takeaway:** Cost, audit trail, and Excel-user-friendly interface are non-negotiables. Our design covers these but needs more explicit documentation on audit infrastructure.
+> "The power users, they are Excel users... they should be able to repeatable... tweak the pseudocode" - TK (Jan 19)
+
+> "In our first release, the first quarter, every single thing is going to be new. So it'll be basically 0 caches." - Monty (Jan 30)
+
+> "There's a great interest in MCP on the Deloitte side." - Monty (Jan 30)
+
+**Takeaway:** Self-service for auditors, existing tech stack constraints, cost transparency, ADO Repos for audit trail, and Excel-friendly UX are the non-negotiables. Design is ~90% aligned after v2.0 updates.
 
 ---
 
-**Status:** Design document is 80% aligned with customer requirements. Critical gaps identified and action items defined above.
+**Status:** Design document is ~90% aligned with customer requirements. Primary remaining gap is POC success criteria document and human review UX design.
