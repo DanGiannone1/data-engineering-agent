@@ -126,7 +126,8 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 | Azure Databricks | $86 | 50 jobs × 1hr × $1.71/hr |
 | Cosmos DB (cache + state + audit) | $8 | Serverless, 3 containers, minimal volume |
 | ADLS Immutable Archive | $10 | WORM-protected audit archive |
-| **Total** | **$256/month** | |
+| Azure Synapse (serverless SQL) | $2 | ~$5/TB queried; minimal POC volume |
+| **Total** | **$258/month** | |
 
 ---
 
@@ -142,12 +143,13 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 | **Azure Databricks** | **$2,138** | **1,250 jobs × 1hr × $1.71/hr** |
 | Cosmos DB (cache + state + audit) | $30 | Building cache + high audit write volume |
 | ADLS Immutable Archive | $15 | WORM-protected audit archive |
-| **Total** | **$2,746/month** | |
-| **3-Month Cold Start** | **$8,238** | |
+| Azure Synapse (serverless SQL) | $25 | ~$5/TB queried; 1,250 runs × ~4MB avg |
+| **Total** | **$2,771/month** | |
+| **3-Month Cold Start** | **$8,313** | |
 
-**Per-run cost:** $2,746 / 1,250 = **$2.20/run** (vs. $800 manual = **99.7% reduction**)
+**Per-run cost:** $2,771 / 1,250 = **$2.22/run** (vs. $800 manual = **99.7% reduction**)
 
-**With Spot instances** (60% discount on Databricks workers): Total drops to ~$1,470/month
+**With Spot instances** (60% discount on Databricks workers): Total drops to ~$1,495/month
 
 ---
 
@@ -163,11 +165,12 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 | **Azure Databricks** | **$2,138** | **1,250 jobs × 1hr × $1.71/hr** (all runs need Spark) |
 | Cosmos DB (cache + state + audit) | $20 | Mature cache, mostly reads + audit writes |
 | ADLS Immutable Archive | $15 | WORM-protected audit archive |
-| **Total** | **$2,613/month** | |
-| **Quarterly** | **$7,839** | |
-| **Annual** | **$31,356** | |
+| Azure Synapse (serverless SQL) | $25 | ~$5/TB queried |
+| **Total** | **$2,638/month** | |
+| **Quarterly** | **$7,914** | |
+| **Annual** | **$31,656** | |
 
-**Per-run cost:** $2,613 / 1,250 = **$2.09/run**
+**Per-run cost:** $2,638 / 1,250 = **$2.11/run**
 
 **Note:** Cache hits save LLM costs ($65/month savings per 10% cache improvement) but NOT Spark costs — all runs execute PySpark regardless.
 
@@ -183,11 +186,12 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 | **Azure Databricks (Spot)** | **$863** | **1,250 jobs × 1hr × $0.69/hr** |
 | Cosmos DB (cache + state + audit) | $15 | Mature cache + steady audit |
 | ADLS Immutable Archive | $12 | WORM-protected audit archive |
-| **Total** | **$1,269/month** | |
-| **Quarterly** | **$3,807** | |
-| **Annual** | **$15,228** | |
+| Azure Synapse (serverless SQL) | $25 | ~$5/TB queried |
+| **Total** | **$1,294/month** | |
+| **Quarterly** | **$3,882** | |
+| **Annual** | **$15,528** | |
 
-**Per-run cost:** $1,269 / 1,250 = **$1.02/run**
+**Per-run cost:** $1,294 / 1,250 = **$1.04/run**
 
 **Spot instances are the single biggest cost lever** — reducing Databricks from $2,138 to $863/month (60% savings on Spark compute).
 
@@ -205,10 +209,11 @@ This cost analysis provides detailed projections for running the AI Data Enginee
 | **Azure Databricks** | **$2,565** | **1,500 jobs × 1hr × $1.71/hr** |
 | Cosmos DB (cache + state + audit) | $30 | High volume + audit |
 | ADLS Immutable Archive | $15 | WORM-protected audit archive |
-| **Total** | **$3,183/month** | |
-| **3-Month Busy Season** | **$9,549** | |
+| Azure Synapse (serverless SQL) | $30 | ~$5/TB queried; higher volume |
+| **Total** | **$3,213/month** | |
+| **3-Month Busy Season** | **$9,639** | |
 
-**With Spot instances:** ~$1,660/month (total), $4,980/quarter
+**With Spot instances:** ~$1,690/month (total), $5,070/quarter
 
 ---
 
@@ -381,28 +386,29 @@ At 1,250 runs/month:
 
 | Configuration | Monthly | Annual |
 |--------------|---------|--------|
-| Standard (60% cache, on-demand) | $2,613 | $31,356 |
-| **Optimized (70% cache, Spot)** | **$1,269** | **$15,228** |
-| Aggressive (80% cache, Spot, right-sized) | $1,030 | $12,360 |
+| Standard (60% cache, on-demand) | $2,638 | $31,656 |
+| **Optimized (70% cache, Spot)** | **$1,294** | **$15,528** |
+| Aggressive (80% cache, Spot, right-sized) | $1,055 | $12,660 |
 
 ### Per-Run Cost:
 
 | Configuration | Cost per Run | vs. $800 Manual |
 |--------------|-------------|-----------------|
-| Standard | $2.09 | **99.7% reduction** |
-| Optimized | $1.02 | **99.9% reduction** |
+| Standard | $2.11 | **99.7% reduction** |
+| Optimized | $1.04 | **99.9% reduction** |
 
 ### Cost Distribution (Steady State, Standard):
 
 | Component | % of Total | Monthly |
 |-----------|-----------|---------|
-| Azure Databricks | **82%** | $2,138 |
+| Azure Databricks | **81%** | $2,138 |
 | ADLS Gen2 | 8% | $200 |
 | Agent Runtime (Durable Functions) | 7% | $175 |
 | Azure OpenAI | 2% | $65 |
+| Azure Synapse (serverless SQL) | 1% | $25 |
 | Cosmos DB (cache + state + audit) + ADLS Archive | 1% | $35 |
 
-**Databricks is the dominant cost.** Spot instances are the single most impactful optimization lever.
+**Databricks is the dominant cost.** Spot instances are the single most impactful optimization lever. Synapse serverless SQL adds minimal cost (~$5/TB queried, pay-per-use).
 
 ---
 
