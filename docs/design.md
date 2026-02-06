@@ -90,7 +90,7 @@ Build an **AI-powered data engineering agent** that automates the transformation
 ```mermaid
 graph LR
     A[Auditor<br/>Excel Power User] --> B[Azure Durable Functions<br/>+ Agent Framework]
-    B --> C[Azure OpenAI<br/>GPT-4o / 4o-mini]
+    B --> C[Azure OpenAI<br/>GPT-5.2]
     B --> D[Cosmos DB<br/>Approved Code · State · Audit]
     B --> E[Azure Databricks<br/>Jobs Compute]
     B --> F[ADLS Gen2<br/>Data Lake]
@@ -130,7 +130,7 @@ The customer's existing platform uses the following services. To minimize tech d
 | Component | Service | Purpose |
 |-----------|---------|---------|
 | **AI Agent Runtime** | Azure Durable Functions + Microsoft Agent Framework | Orchestrate workflow, manage agent lifecycle, tool calling, checkpointing |
-| **LLM Backend** | Azure OpenAI (GPT-4o / GPT-4o-mini) | Data analysis, pseudocode generation, PySpark code generation |
+| **LLM Backend** | Azure OpenAI (GPT-5.2) | Data analysis, pseudocode generation, PySpark code generation |
 | **Data Storage** | Azure ADLS Gen2 | Store client data, mappings, and intermediate output |
 | **Big Data Processing** | Azure Databricks (Jobs Compute) | Execute PySpark transformations at scale (1-10GB files) |
 | **Output Destination** | Azure Synapse Analytics (dedicated SQL pool) | Load transformed data into existing production tables |
@@ -287,7 +287,7 @@ from azure.identity import DefaultAzureCredential
 client = AzureOpenAIResponsesClient(
     credential=DefaultAzureCredential(),
     azure_endpoint="https://<resource>.openai.azure.com",
-    model="gpt-4o",
+    model="gpt-5.2",
 )
 
 # Define tools as direct functions
@@ -333,7 +333,7 @@ result = await agent.run(
 - **Multi-Turn Conversations**: Iterative pseudocode refinement with human feedback
 - **Streaming**: Real-time progress via `run_stream()` and `AgentRunUpdateEvent`
 - **Agent State Persistence**: Conversation history stored in Cosmos DB (`ChatMessageStore`)
-- **Model Flexibility**: Swap between GPT-4o (complex analysis), GPT-4o-mini (simple tasks) without code changes
+- **Model Flexibility**: Swap between models (e.g., GPT-5.2, future releases) without code changes
 
 **Why Direct Function Tools (not MCP)?**
 
@@ -833,7 +833,7 @@ For legal hold and long-term retention, audit data is periodically exported from
 1. **Approved Code Reuse:** Skip AI processing when client inputs haven't changed (saves LLM tokens)
 2. **Right-Size Clusters:** Databricks autoscaling (1-5 workers) based on data volume
 3. **Spot Instances:** 40-80% discount on Databricks worker VMs for non-critical jobs
-4. **Model Tiering:** Use GPT-4o-mini for code generation (mechanical from pseudocode), GPT-4o for pseudocode generation (requires reasoning)
+4. **Model Tiering:** Use a smaller model for code generation (mechanical from pseudocode), GPT-5.2 for pseudocode generation (requires reasoning)
 5. **Data Sampling:** Only 100 rows for profiling (reduces LLM token costs)
 6. **Batch Processing:** Group multiple clients in off-peak hours
 7. **Synapse Dedicated Pool:** Already provisioned by customer — no new infrastructure cost for output destination
