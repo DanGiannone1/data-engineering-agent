@@ -5,7 +5,7 @@ This folder contains all planning, design, and strategic documents for the AI-po
 ## Documents
 
 ### Technical Implementation
-- **[design.md](./design.md)** - Customer-specific technical design: AKS/Durable Functions + ADO Repos (adapted to customer's existing tech stack)
+- **[design.md](./design.md)** - Customer-specific technical design: Durable Functions + Cosmos DB (adapted to customer's existing tech stack) (v3.0)
 - **[reference-architecture.md](./reference-architecture.md)** - Reusable reference architecture: Container Apps + GitHub (Microsoft's recommended stack for field/partner reuse)
 - **[copilot-sdk-setup.md](./copilot-sdk-setup.md)** - Agent runtime decision log: pivot from GitHub Copilot SDK to Microsoft Agent Framework
 
@@ -27,7 +27,7 @@ This folder contains all planning, design, and strategic documents for the AI-po
 
 | Document | Stack | Audience | Purpose |
 |----------|-------|----------|---------|
-| `design.md` | AKS/Durable Functions + ADO Repos | This customer | Adapted to customer's CTO-approved tech stack |
+| `design.md` | Durable Functions + Cosmos DB | This customer | Adapted to customer's CTO-approved tech stack (v3.0) |
 | `reference-architecture.md` | Container Apps + GitHub | Field teams, partners, other customers | Microsoft's recommended stack for reuse |
 
 Both documents share the same agent workflow (6 phases), Agent Framework runtime, Databricks compute, and Cosmos DB caching. The difference is the hosting and code storage layer.
@@ -40,10 +40,10 @@ Both documents share the same agent workflow (6 phases), Agent Framework runtime
 reference-architecture.md (Reusable Template)
   └─> Generalized for any customer
 
-design.md (Customer-Specific Adaptation)
+design.md (Customer-Specific Adaptation, v3.0)
   ├─ Architecture adapted to customer constraints
-  ├─ AKS/Durable Functions (CTO requirement)
-  └─ ADO Repos (customer's code platform)
+  ├─ Durable Functions (CTO requirement)
+  └─ Cosmos DB (Sprint 1) / ADO Repos (future sprint)
 
 cost-analysis.md (v3.0 — Realistic Volumes)
   └─> strategic-business-case.md (Business Justification)
@@ -64,7 +64,7 @@ copilot-sdk-setup.md (Agent Runtime Decision Log)
 
 | Document | Primary Audience | Purpose |
 |----------|-----------------|---------|
-| `design.md` | Customer architects, developers | Customer-specific implementation |
+| `design.md` | Customer architects, developers | Customer-specific implementation (v3.0) |
 | `reference-architecture.md` | Microsoft field teams, partners | Reusable pattern for other customers |
 | `copilot-sdk-setup.md` | Developers | Agent runtime decision log |
 | `cost-analysis.md` | Finance, procurement, executives | Budget planning |
@@ -78,7 +78,7 @@ copilot-sdk-setup.md (Agent Runtime Decision Log)
 
 All documents current as of February 6, 2026.
 
-- [x] Architecture planning complete (v2.0+ — Microsoft Agent Framework)
+- [x] Architecture planning complete (v3.0 — Durable Functions, Cosmos DB audit, ADO Repos phased)
 - [x] Cost analysis validated (v3.0 — realistic volumes, ~1,250 runs/month)
 - [x] Agent runtime decision: Microsoft Agent Framework
 - [x] Reference architecture for internal reuse (Container Apps + GitHub)

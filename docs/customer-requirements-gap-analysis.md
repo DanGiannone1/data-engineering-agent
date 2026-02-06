@@ -43,7 +43,7 @@
 
 ---
 
-### 3. **Technology Stack — Use Existing Services** ⚠️ UPDATED (Jan 30)
+### 3. **Technology Stack — Use Existing Services** ✅ COVERED (Jan 30)
 **Requirement (Jan 30 — TK):**
 > "There is strong pushback from our CTO organization to limit our tech stack. For each use case, I cannot introduce a new service."
 
@@ -58,12 +58,13 @@
 | Azure Databricks | Spark notebooks (existing) |
 | ADLS Gen2 | Data lake storage |
 
-**Key change from Jan 19:** Customer previously seemed open to Container Apps. Jan 30 transcript makes clear they **will not introduce Container Apps** initially. Must use AKS or Durable Functions.
+**Key change from Jan 19:** Customer previously seemed open to Container Apps. Jan 30 transcript makes clear they **will not introduce Container Apps** initially.
 
-**Design Coverage:** ✅ Updated
-- Agent runtime: AKS or Azure Durable Functions
+**Design Coverage:** ✅ Fully addressed (v3.0)
+- Agent runtime: **Azure Durable Functions** (locked in — provides native durable orchestration for human-in-the-loop)
 - Container Apps noted as future roadmap option
 - Customer tech stack documented in design
+- No new services introduced — Cosmos DB, ADLS, Durable Functions, Databricks all already in stack
 
 **Note (Jan 19):** Customer mentioned "challenges with AKS for big data" — this was about Spark processing (solved by Databricks), not about agent hosting.
 
@@ -116,7 +117,7 @@
 
 ---
 
-### 7. **Code Storage — ADO Repos** ⚠️ NEW (Jan 30)
+### 7. **Code Storage — ADO Repos** ✅ COVERED (Phased)
 **Requirement (Jan 30 — TK):**
 > "Ultimate goal is all the codes should go to repos. For the audit trail or whatever the purpose."
 
@@ -125,10 +126,12 @@
 - ADO Repos provides: git history, version control, legal hold, audit trail
 - Open question: Who reviews PRs? Specialists? Or automated commits?
 
-**Design Coverage:** ✅ Addressed
-- Dual storage: Cosmos DB (runtime cache) + ADO Repos (approved code)
-- `commit_to_ado_repo` MCP tool added
-- ADO auth via Managed Identity or service principal
+**Design Coverage:** ✅ Addressed with phased approach (v3.0)
+- **Sprint 1:** Cosmos DB as sole code store (3 containers: code-cache, agent-state, audit-trail)
+- **Future Sprint:** ADO Repos integration for git-based version history
+- `commit_to_ado_repo` MCP tool marked as "Future Sprint"
+- **Reason for phasing:** Authenticating from Durable Functions to ADO Repos requires service principal with PAT or OAuth app registration — more complex than Managed Identity. Sprint 1 focuses on proving the core pipeline.
+- Customer's goal of "all codes in repos" is honored — just phased after Sprint 1
 
 ---
 
@@ -188,11 +191,11 @@
 - TRC team confidence
 - Paper trail: who approved what, when
 
-**Design Coverage:** ✅ Addressed in v2.0
-- ADO Repos for versioned code history
-- Immutable Blob Storage for approvals and execution history
-- Azure Monitor + OpenTelemetry for agent action tracing
+**Design Coverage:** ✅ Addressed in v3.0
+- **Cosmos DB `audit-trail` container**: Structured JSON events for every approval, tool call, LLM invocation, and execution result — queryable for compliance dashboards
+- **ADLS Gen2 immutable storage (WORM policy)**: Long-term archive of code snapshots, execution logs, and approval records for legal hold
 - Deterministic reviewer script (not AI)
+- ADO Repos for versioned code history (future sprint)
 
 ---
 
@@ -260,24 +263,24 @@
 
 ## Summary: Design Document Coverage
 
-### ✅ **Fully Covered (12/16)**
+### ✅ **Fully Covered (13/16)**
 1. Self-service for auditors
 2. Scale & volume (~1,250 runs/month)
-3. Repeatability & caching
-4. Cold start quarter (cost scenario)
-5. Code storage (Cosmos DB + ADO Repos)
-6. Retry logic (3 tries with error log passback)
-7. Data security (metadata only to LLM)
-8. Audit & compliance infrastructure
-9. Cost optimization
-10. Enterprise reusability
-11. Agent Framework decision
-12. Technology stack alignment (AKS/Durable Functions)
+3. Technology stack alignment (Durable Functions locked in)
+4. Repeatability & caching
+5. Cold start quarter (cost scenario)
+6. Code storage (Cosmos DB Sprint 1 + ADO Repos future sprint)
+7. Retry logic (3 tries with error log passback)
+8. Data security (metadata only to LLM)
+9. Audit & compliance infrastructure (Cosmos DB audit trail + ADLS WORM archive)
+10. Cost optimization
+11. Enterprise reusability
+12. Agent Framework decision
+13. ADO Repos phased approach
 
-### ⚠️ **Partially Covered — Needs Enhancement (3/16)**
+### ⚠️ **Partially Covered — Needs Enhancement (2/16)**
 1. **Human-in-the-loop UX:** Workflow defined, UI/UX not specified (need .NET integration plan)
 2. **MCP server availability:** MCP tools listed, but Azure service availability not mapped
-3. **Existing code migration:** Not addressed (future optimization for cold start reduction)
 
 ### ❌ **Missing (1 deliverable)**
 1. **POC Success Criteria:** Need document defining 3-4 test engagements, complexity levels, metrics
@@ -299,8 +302,7 @@
    - [ ] Determine where MCP vs. direct API makes sense
 
 4. **Validation:**
-   - [ ] Review updated design with customer
-   - [ ] Confirm AKS vs. Durable Functions compute preference
+   - [ ] Review updated design (v3.0) with customer
    - [ ] Get mapping walkthrough recording from Dalton (or schedule new session)
    - [ ] Get schema stability percentage from Mahesh (for cache hit rate projection)
 
@@ -332,4 +334,4 @@
 
 ---
 
-**Status:** Design document is ~90% aligned with customer requirements. Primary remaining gap is POC success criteria document and human review UX design.
+**Status:** Design document v3.0 is ~93% aligned with customer requirements. Durable Functions locked in, audit trail redesigned (Cosmos DB + ADLS WORM), ADO Repos phased. Primary remaining gaps are POC success criteria document and human review UX design.

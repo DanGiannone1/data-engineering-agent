@@ -1,6 +1,6 @@
 # AI Data Engineering Agent - Design Document
 
-**Version:** 2.0
+**Version:** 3.0
 **Date:** February 6, 2026
 **Status:** Draft
 
@@ -50,7 +50,7 @@ The customer manages data transformations for **3,000+ clients**, each with uniq
 
 **Volume Breakdown (Typical Year):**
 - New clients: ~5-10% of annual volume
-- Schema changes: ~10-20% of annual volume  
+- Schema changes: ~10-20% of annual volume
 - Pure reruns: ~70-80% of annual volume (quarterly runs with unchanged schemas)
 
 **Cost Impact:**
@@ -88,36 +88,23 @@ Build an **AI-powered data engineering agent** that automates the transformation
 ### Architecture Diagram
 
 ```mermaid
-graph TD
-    U[Auditor<br/>Excel Power User] -->|Provides mapping + inputs| B
-    A[Azure ADLS Gen2<br/>Client Data + Mappings] --> B[Agent Runtime<br/>AKS or Durable Functions<br/>+ Microsoft Agent Framework]
-    B -->|Profiling, pseudocode,<br/>code generation| L[Azure OpenAI<br/>GPT-4o / GPT-4o-mini]
-    L --> B
-    B --> C[Pseudocode Review<br/>Plain English Feedback]
-    C -->|Approve / Revise| U
-    U -->|Feedback| C
-    C --> B
-    B --> D[Cosmos DB<br/>Code Cache + Agent State]
-    B --> R[ADO Repos<br/>Approved PySpark Code]
-    D --> E[Azure Databricks<br/>Jobs Compute Cluster]
-    B --> E
-    E --> F[ADLS Output<br/>Transformed Data]
-    B --> G[Agent Integrity Checks<br/>Automated Validation<br/>3-try retry with error log]
-    G -->|Checks pass| H[Human Final Review<br/>Auditor Reviews Output]
-    H -->|Output rejected| C
-    H -->|Approved| I[Azure SQL<br/>Standardized Output Tables]
+graph LR
+    A[Auditor<br/>Excel Power User] --> B[Azure Durable Functions<br/>+ Agent Framework]
+    B --> C[Azure OpenAI<br/>GPT-4o / 4o-mini]
+    B --> D[Cosmos DB<br/>Cache · State · Audit]
+    B --> E[Azure Databricks<br/>Jobs Compute]
+    B --> F[ADLS Gen2<br/>Data Lake]
+    E --> G[Azure SQL<br/>Standardized Output]
+    B -.->|Pseudocode Review| A
+    B -.->|Output Review| A
 
-    B -.-> J[Azure Monitor + OpenTelemetry<br/>Audit Logging]
-    C -.-> K[Immutable Blob Storage<br/>Audit Trail: Approvals & Code History]
-
+    style A fill:#68217a,color:#fff
     style B fill:#0078d4,color:#fff
-    style L fill:#0078d4,color:#fff
+    style C fill:#0078d4,color:#fff
+    style D fill:#0078d4,color:#fff
     style E fill:#7fba00,color:#fff
-    style G fill:#5c2d91,color:#fff
-    style J fill:#ff6b35,color:#fff
-    style K fill:#ff6b35,color:#fff
-    style U fill:#68217a,color:#fff
-    style R fill:#f5af00,color:#000
+    style F fill:#0078d4,color:#fff
+    style G fill:#0078d4,color:#fff
 ```
 
 ### Customer Tech Stack
@@ -134,21 +121,49 @@ The customer's existing platform uses the following services. To minimize tech d
 | **Azure Databricks** | Spark notebooks (existing) |
 | **ADLS Gen2** | Data lake storage |
 
-**Compute Decision:** The agent runtime will use **AKS** or **Azure Durable Functions** — both are already in the customer's approved tech stack. Azure Container Apps is noted as a future roadmap option as Microsoft invests in AI Foundry integration, but is not required for initial deployment.
+**Compute Decision:** The agent runtime uses **Azure Durable Functions**. Durable Functions provides native durable orchestration for human-in-the-loop workflows — the agent pauses at review checkpoints and resumes when the auditor responds, with state automatically persisted. This is already in the customer's approved tech stack and avoids introducing new services (per CTO guardrails). Azure Container Apps is noted as a future roadmap option as Microsoft invests in AI Foundry integration, but is not required for initial deployment.
 
 ### Services & Components
 
 | Component | Service | Purpose |
 |-----------|---------|---------|
-| **AI Agent Runtime** | AKS or Azure Durable Functions + Microsoft Agent Framework | Orchestrate workflow, manage agent lifecycle, tool calling, checkpointing |
+| **AI Agent Runtime** | Azure Durable Functions + Microsoft Agent Framework | Orchestrate workflow, manage agent lifecycle, tool calling, checkpointing |
 | **LLM Backend** | Azure OpenAI (GPT-4o / GPT-4o-mini) | Data analysis, pseudocode generation, PySpark code generation |
 | **Data Storage** | Azure ADLS Gen2 | Store client data, mappings, and output |
 | **Big Data Processing** | Azure Databricks (Jobs Compute) | Execute PySpark transformations at scale (1-10GB files) |
-| **Code Cache + Agent State** | Cosmos DB (serverless) | Runtime cache for transformations; persist agent conversation/thread state |
-| **Approved Code Repository** | Azure DevOps Repos | Final approved PySpark code stored for audit trail and version history |
-| **Audit Logging** | Azure Monitor + OpenTelemetry | Compliance trail for regulatory requirements (built-in Agent Framework tracing) |
-| **Audit Storage** | Immutable Blob Storage | Immutable record of approvals, generated code, and execution history |
+| **Code Cache + Agent State + Audit** | Cosmos DB (serverless) | Runtime cache, agent conversation state, structured audit trail |
+| **Approved Code Repository** | Cosmos DB (Sprint 1) / ADO Repos (future sprint) | PySpark + pseudocode storage; ADO Repos deferred due to auth complexity from Durable Functions |
+| **Audit Archive** | ADLS Gen2 (immutable storage policy) | WORM-protected archive of code snapshots, execution logs, and approvals for legal hold |
 | **Integrity Checks** | Agent-driven (deterministic scripts) | Automated validation of output before surfacing to human reviewer |
+
+### Agent Workflow Overview
+
+```mermaid
+flowchart TD
+    T[Trigger<br/>Manual / Scheduled] --> CC{Cache Check<br/>Cosmos DB}
+    CC -->|Hit| EX[Execute Cached PySpark]
+    CC -->|Miss| PR[Data Profiling<br/>+ Pseudocode Generation]
+    PR --> HR{Auditor Reviews<br/>Pseudocode}
+    HR -->|Feedback| PR
+    HR -->|Approve| CG[PySpark Code Generation]
+    CG --> EX
+    EX --> IC{Integrity Checks<br/>Deterministic}
+    IC -->|Fail| RT{Retries < 3?}
+    RT -->|Yes| CG
+    RT -->|No| FAIL[Show Failure<br/>to Auditor]
+    IC -->|Pass| FR{Auditor Reviews<br/>Output}
+    FR -->|Reject| PR
+    FR -->|Approve| LD[Load to Azure SQL]
+    LD --> DONE[Update Cache<br/>+ Notify]
+
+    style T fill:#68217a,color:#fff
+    style HR fill:#68217a,color:#fff
+    style FR fill:#68217a,color:#fff
+    style EX fill:#7fba00,color:#fff
+    style IC fill:#5c2d91,color:#fff
+    style FAIL fill:#d13438,color:#fff
+    style DONE fill:#107c10,color:#fff
+```
 
 ### Architecture Flow
 
@@ -170,12 +185,12 @@ The customer's existing platform uses the following services. To minimize tech d
 11. Reviewer provides feedback in plain English (e.g., "Account numbers should be zero-padded to 10 digits")
 12. Agent iterates on pseudocode incorporating feedback
 13. Reviewer approves final pseudocode
-14. Approval logged to immutable blob storage (compliance requirement)
-15. Agent workflow checkpoints state (Agent Framework built-in checkpointing)
+14. Approval logged to Cosmos DB audit trail and archived to ADLS immutable storage
+15. Agent workflow checkpoints state (Durable Functions built-in checkpointing)
 
 **Phase 4: Code Generation & Execution (with Retry Logic)**
 16. Agent generates production PySpark code from approved pseudocode
-17. Store PySpark + pseudocode in Cosmos DB cache and commit to ADO Repos
+17. Store PySpark + pseudocode in Cosmos DB cache
 18. Agent submits Spark job to Azure Databricks (Jobs Compute cluster)
 19. Spark reads full dataset from ADLS, applies transformations, writes output to ADLS
 20. **If execution fails**: Pass error log back to agent → agent diagnoses and fixes PySpark → re-submit (retry up to 3 times)
@@ -198,7 +213,7 @@ The customer's existing platform uses the following services. To minimize tech d
     - Integrity check report (all checks passed)
     - Sample of transformed output (first N rows)
 26. Auditor reviews the **output data** (not the PySpark code — auditors are Excel users, not developers)
-27. **If output is acceptable**: Auditor approves → approval logged to immutable storage
+27. **If output is acceptable**: Auditor approves → approval logged to Cosmos DB audit trail and ADLS immutable archive
 28. **If output is not acceptable**: Auditor provides feedback → **loop back to Phase 3 (pseudocode revision)** → agent revises pseudocode → regenerates code → re-executes. The entire pipeline (Phases 3-6) is repeatable.
 29. On final approval: Output loaded to Azure SQL (standardized output tables)
 30. Cache entry updated with success status and execution metadata
@@ -224,7 +239,6 @@ The customer's existing platform uses the following services. To minimize tech d
 - No platform fee — pure consumption pricing via Azure OpenAI
 - 10,000+ organizations already using Foundry Agent Service in production (KPMG, BMW, Commerzbank)
 - Native workflow checkpointing for human-in-the-loop approval flows
-- Built-in OpenTelemetry tracing for audit/compliance
 - MCP (Model Context Protocol) support for custom tools
 - **Note:** Agent Framework can wrap Copilot SDK as a backend agent type (`GitHubCopilotAgent`) if Copilot SDK reaches GA later — migration path preserved
 
@@ -273,7 +287,6 @@ async with (
 - **Multi-Turn Conversations**: Iterative pseudocode refinement with human feedback
 - **Streaming**: Real-time progress via `run_stream()` and `AgentRunUpdateEvent`
 - **Agent State Persistence**: Conversation history stored in Cosmos DB (`ChatMessageStore`)
-- **OpenTelemetry Tracing**: Every agent action traced for audit compliance (integrated with Azure Monitor)
 - **Model Flexibility**: Swap between GPT-4o (complex analysis), GPT-4o-mini (simple tasks) without code changes
 
 **Custom MCP Tools (to be built):**
@@ -289,7 +302,7 @@ async with (
 | `run_integrity_checks` | Row counts, schema, nulls, ranges, referential integrity | Phase 5 |
 | `write_to_cache` | Store approved code in Cosmos DB | Phase 4 |
 | `read_from_cache` | Retrieve cached transformations | Phase 1 |
-| `commit_to_ado_repo` | Commit approved PySpark + pseudocode to ADO Repos | Phase 4 |
+| `commit_to_ado_repo` | Commit approved PySpark + pseudocode to ADO Repos | **(Future Sprint)** |
 
 ---
 
@@ -297,9 +310,25 @@ async with (
 
 All authentication uses **Azure Managed Identity** — no API keys or secrets in code.
 
+```mermaid
+graph TD
+    DF[Azure Durable Functions<br/>Managed Identity] --> OAI[Azure OpenAI<br/>Cognitive Services OpenAI User]
+    DF --> ADLS[ADLS Gen2<br/>Storage Blob Data Reader/Contributor]
+    DF --> DB[Azure Databricks<br/>Contributor]
+    DF --> CDB[Cosmos DB<br/>Built-in Data Contributor]
+    DF --> SQL[Azure SQL<br/>db_datawriter]
+
+    style DF fill:#0078d4,color:#fff
+    style OAI fill:#0078d4,color:#fff
+    style ADLS fill:#0078d4,color:#fff
+    style DB fill:#7fba00,color:#fff
+    style CDB fill:#0078d4,color:#fff
+    style SQL fill:#0078d4,color:#fff
+```
+
 #### Agent Runtime → Azure OpenAI
 **Method:** Managed Identity with `Cognitive Services OpenAI User` RBAC role
-- Agent Framework uses `DefaultAzureCredential` — automatically picks up managed identity from AKS pod identity or Function App identity
+- Agent Framework uses `DefaultAzureCredential` — automatically picks up managed identity from Function App identity
 - No API key management required
 
 #### Agent Runtime → ADLS Access
@@ -316,9 +345,16 @@ All authentication uses **Azure Managed Identity** — no API keys or secrets in
 **Method:** Managed Identity with `Cosmos DB Built-in Data Contributor` role
 - Read/write code cache entries
 - Store agent thread/conversation state (Agent Framework `ChatMessageStore`)
+- Write structured audit trail events
 
-#### Agent Runtime → Azure DevOps Repos
-**Method:** Managed Identity or service principal with `Contributor` role on the code repository
+#### Agent Runtime → Azure SQL
+**Method:** Managed Identity with `db_datawriter` role
+- Load final approved output to standardized tables
+
+#### Future Sprint: Agent Runtime → Azure DevOps Repos
+> **Deferred to future sprint.** Authenticating from Durable Functions to ADO Repos requires a service principal with PAT or OAuth app registration — more complex than Managed Identity. Sprint 1 uses Cosmos DB as the sole code store. ADO Repos integration will be added once the core pipeline is proven.
+
+**Method (when implemented):** Service principal with `Contributor` role on the code repository
 - Commit approved PySpark code to designated repo
 - Create branches/PRs for audit trail
 
@@ -332,46 +368,78 @@ All authentication uses **Azure Managed Identity** — no API keys or secrets in
 
 **Purpose:** Avoid regenerating transformations when input structure hasn't changed, while maintaining a versioned audit trail of all approved code.
 
-**Dual Storage Architecture:**
+#### Sprint 1: Cosmos DB as Single Store
 
-The customer requires final approved code to reside in **Azure DevOps Repos** for audit trail and version history. **Cosmos DB** serves as the runtime cache for fast lookups during execution.
+In Sprint 1, **Cosmos DB serves as both the runtime cache and the code repository**. This simplifies the architecture and avoids the auth complexity of integrating Durable Functions with ADO Repos.
 
-```
-┌─────────────────────────────────────────────────┐
-│  Runtime Cache (Cosmos DB - Serverless)          │
-│                                                   │
-│  Key: hash(client_id + mapping + schema)         │
-│  Value: {                                         │
-│    "pseudocode": "...",                           │
-│    "pyspark_code": "...",                         │
-│    "ado_repo_path": "clients/CLIENT_001/v3.py",  │
-│    "created_at": "2026-01-20T...",                │
-│    "status": "approved",                          │
-│    "execution_count": 42,                         │
-│    "last_run_success": true                       │
-│  }                                                │
-└───────────────────────┬─────────────────────────-─┘
-                        │ Points to
-┌───────────────────────▼─────────────────────────-─┐
-│  Approved Code Repository (Azure DevOps Repos)    │
-│                                                    │
-│  Structure:                                        │
-│  └── clients/                                      │
-│      └── CLIENT_001/                               │
-│          ├── pseudocode_v1.md                       │
-│          ├── transform_v1.py                        │
-│          ├── pseudocode_v2.md  (schema change)      │
-│          └── transform_v2.py                        │
-│                                                    │
-│  Benefits:                                         │
-│  - Full git history for audit trail                │
-│  - Version control for all transformations         │
-│  - Legal hold / compliance retention               │
-│  - Familiar workflow for specialists               │
-└────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Sprint 1 — Cosmos DB"
+        CC[code-cache Container<br/>Cached PySpark + Pseudocode<br/>Partition: /client_id]
+        AS[agent-state Container<br/>Conversation / Thread State<br/>Partition: /thread_id]
+        AT[audit-trail Container<br/>Approvals · Tool Calls · LLM Invocations<br/>Partition: /client_id]
+    end
+
+    subgraph "Future Sprint — ADO Repos"
+        direction TB
+        ADO[Azure DevOps Repos<br/>Versioned PySpark + Pseudocode<br/>Git history for audit trail]
+    end
+
+    CC -.->|Migrate approved code| ADO
+
+    style CC fill:#0078d4,color:#fff
+    style AS fill:#0078d4,color:#fff
+    style AT fill:#0078d4,color:#fff
+    style ADO fill:#f5af00,color:#000,stroke-dasharray: 5 5
 ```
 
-**ADO Repos Workflow:**
+#### Cosmos DB Container Schema
+
+| Container | Purpose | Partition Key | TTL |
+|-----------|---------|--------------|-----|
+| `code-cache` | Cached PySpark + pseudocode, execution metadata | `/client_id` | Optional (90 days) |
+| `agent-state` | Conversation history, thread state, checkpoints | `/thread_id` | 30 days after last activity |
+| `audit-trail` | Approvals, tool calls, LLM invocations, execution results | `/client_id` | None (retained indefinitely) |
+
+**`code-cache` document example:**
+```json
+{
+  "id": "a8f3d9e2b1c4...",
+  "client_id": "CLIENT_001",
+  "cache_key": "hash(client_id + mapping_content + schema_fingerprint)",
+  "pseudocode": "...",
+  "pyspark_code": "...",
+  "created_at": "2026-01-20T...",
+  "status": "approved",
+  "execution_count": 42,
+  "last_run_success": true
+}
+```
+
+**`audit-trail` document example:**
+```json
+{
+  "id": "evt_20260120_001",
+  "client_id": "CLIENT_001",
+  "event_type": "pseudocode_approval",
+  "timestamp": "2026-01-20T14:32:00Z",
+  "actor": "auditor@customer.com",
+  "details": {
+    "pseudocode_version": 2,
+    "feedback_rounds": 1,
+    "cache_key": "a8f3d9e2b1c4..."
+  }
+}
+```
+
+#### Future Sprint: ADO Repos Integration
+
+The customer's TK requires that "all the codes should go to repos" for audit trail. We honor that goal with a phased approach:
+
+- **Sprint 1:** Cosmos DB stores all code, state, and audit data. Code versioning handled via cache key + `created_at` timestamps.
+- **Future Sprint:** Agent commits approved PySpark + pseudocode to ADO Repos via `commit_to_ado_repo` MCP tool. Cosmos DB remains the runtime cache; ADO Repos becomes the system of record for approved code.
+
+**ADO Repos Workflow (future):**
 - Agent commits approved code via automated PR (no manual code review required — auditor already approved the pseudocode/output)
 - Each client gets a directory with versioned pseudocode + PySpark
 - Commit message includes: client_id, approver, transformation hash, timestamp
@@ -379,10 +447,10 @@ The customer requires final approved code to reside in **Azure DevOps Repos** fo
 
 **Cache Lookup Flow:**
 1. Generate key: `hash(client_id + mapping_content + schema_fingerprint)`
-2. Check Cosmos DB cache
+2. Check Cosmos DB `code-cache` container
 3. **Cache Hit**: Retrieve PySpark code → skip AI processing → execute on Spark
 4. **Cache Miss**: Full pipeline (profile → pseudocode → review → code gen)
-5. On approval: Write to both Cosmos DB cache AND ADO Repos
+5. On approval: Write to Cosmos DB `code-cache` + log event to `audit-trail`
 
 **Cache Invalidation:**
 - Manual invalidation via UI (user marks cache as stale)
@@ -403,7 +471,7 @@ The customer requires final approved code to reside in **Azure DevOps Repos** fo
     ↓
 3.  GENERATE cache key: hash(client_id + mapping_content + schema_fingerprint)
     ↓
-4.  CHECK cache (Cosmos DB)
+4.  CHECK cache (Cosmos DB code-cache)
     ├─ HIT → Execute cached PySpark ──────────────────────────────┐
     │                                                             │
     └─ MISS → Continue to profiling                               │
@@ -414,13 +482,13 @@ The customer requires final approved code to reside in **Azure DevOps Repos** fo
     ↓                                                             │
 7.  AUDITOR REVIEW of pseudocode (conversational)                 │
     ├─ FEEDBACK → Agent revises pseudocode (loop back to 6)       │
-    └─ APPROVE → Log approval to immutable storage                │
+    └─ APPROVE → Log to Cosmos DB audit-trail + ADLS archive      │
        ↓                                                          │
-8.  CHECKPOINT state (Agent Framework persistence)                │
+8.  CHECKPOINT state (Durable Functions persistence)              │
     ↓                                                             │
 9.  GENERATE PySpark from approved pseudocode                     │
     ↓                                                             │
-10. SAVE to Cosmos DB cache + COMMIT to ADO Repos                 │
+10. SAVE to Cosmos DB code-cache                                  │
     ↓                                                             │
 11. SUBMIT Spark job to Databricks ←──────────────────────────────┘
     ↓
@@ -452,7 +520,7 @@ The customer requires final approved code to reside in **Azure DevOps Repos** fo
 17. AUDITOR APPROVES OUTPUT?
     ├─ NO  → Feedback → LOOP BACK TO STEP 6 (revise pseudocode)
     │        Entire pipeline 6→17 is repeatable
-    └─ YES → Log approval to immutable storage
+    └─ YES → Log to Cosmos DB audit-trail + ADLS archive
        ↓
 18. LOAD to Azure SQL (standardized output tables)
     ↓
@@ -463,7 +531,7 @@ The customer requires final approved code to reside in **Azure DevOps Repos** fo
 
 **Workflow Checkpointing:**
 
-The Microsoft Agent Framework provides built-in workflow checkpointing, which is critical for our human-in-the-loop approval flow. At steps 7 and 16, the agent workflow pauses and persists its full state (conversation history, generated artifacts, current phase) to Cosmos DB. When the auditor returns with approval or feedback, the workflow resumes from the exact checkpoint without re-running prior steps.
+Azure Durable Functions provides built-in workflow checkpointing, which is critical for our human-in-the-loop approval flow. At steps 7 and 16, the agent workflow pauses and persists its full state (conversation history, generated artifacts, current phase) to Cosmos DB. When the auditor returns with approval or feedback, the workflow resumes from the exact checkpoint without re-running prior steps.
 
 ```python
 from agent_framework.workflows import Workflow, checkpoint
@@ -627,15 +695,58 @@ class TransformationWorkflow(Workflow):
    - Rate limit AI API calls
 
 4. **Network Security:**
-   - Agent runtime in VNet with private endpoints (AKS cluster networking or Function App VNet integration)
+   - Agent runtime in VNet with private endpoints (Function App VNet integration)
    - Firewall rules on ADLS and Spark clusters
    - No public internet access for data paths
 
 ---
 
-## Monitoring & Observability
+## Audit & Compliance
 
-**Key Metrics:**
+### Audit Architecture
+
+```mermaid
+graph LR
+    subgraph "Real-Time Audit Events"
+        AF[Agent Framework] -->|Structured JSON| CDB[(Cosmos DB<br/>audit-trail)]
+    end
+
+    subgraph "Long-Term Archive"
+        CDB -->|Periodic export| ADLS[ADLS Gen2<br/>Immutable Storage<br/>WORM Policy]
+    end
+
+    CDB -->|Query| DASH[Compliance<br/>Dashboard]
+
+    style AF fill:#0078d4,color:#fff
+    style CDB fill:#0078d4,color:#fff
+    style ADLS fill:#0078d4,color:#fff
+    style DASH fill:#68217a,color:#fff
+```
+
+### Structured Audit Events (Cosmos DB)
+
+Every agent action is logged as a structured JSON event in the `audit-trail` Cosmos DB container. These events are queryable for compliance dashboards and reporting.
+
+**Event types logged:**
+- `pseudocode_approval` — Auditor approved/rejected pseudocode (who, when, feedback)
+- `output_approval` — Auditor approved/rejected output (who, when, feedback)
+- `llm_invocation` — Every LLM call (model, token counts, prompt hash — no client data)
+- `tool_call` — Every MCP tool invocation (tool name, parameters, result status)
+- `spark_execution` — Job submission, completion, duration, success/failure
+- `integrity_check` — Deterministic check results (pass/fail per check type)
+- `cache_hit` / `cache_miss` — Cache lookup results
+
+### Immutable Archive (ADLS Gen2)
+
+For legal hold and long-term retention, audit data is periodically exported from Cosmos DB to ADLS Gen2 with an **immutable storage policy (WORM)**:
+
+- **Code snapshots**: PySpark + pseudocode at time of approval
+- **Execution logs**: Spark job logs, integrity check results
+- **Approval records**: Full approval chain with timestamps and actor identities
+- **Retention**: Configurable per compliance requirements (e.g., 7 years)
+
+### Key Metrics
+
 - Job success rate
 - Average transformation time
 - Cache hit rate
@@ -643,15 +754,9 @@ class TransformationWorkflow(Workflow):
 - Human review time
 - Data volume processed
 
-**Logging:**
-- Application Insights for agent runtime logs (AKS/Functions)
-- OpenTelemetry traces from Agent Framework (every agent action, tool call, and LLM invocation)
-- Spark cluster logs (Databricks)
-- Audit trail for all transformations
-- Human review decisions and approval timestamps
+### Alerting
 
-**Alerting:**
-- Job failures
+- Job failures (via Azure Functions monitoring)
 - High error rates
 - Performance degradation
 - Cost anomalies
@@ -671,6 +776,7 @@ class TransformationWorkflow(Workflow):
 
 ## Future Enhancements
 
+- **ADO Repos Integration:** Commit approved PySpark + pseudocode to Azure DevOps Repos for git-based version history (deferred from Sprint 1 due to Durable Functions → ADO auth complexity)
 - **Auto-approve:** For low-risk transformations after building confidence
 - **Incremental Processing:** Support CDC (Change Data Capture)
 - **Multi-client Batching:** Process multiple clients in single job
@@ -681,4 +787,3 @@ class TransformationWorkflow(Workflow):
 ---
 
 *This design will evolve as we learn from the POC and initial production deployments.*
-
