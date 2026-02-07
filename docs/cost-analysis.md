@@ -1,622 +1,349 @@
 # AI Data Engineering Agent - Cost Analysis
 
-**Version:** 1.0  
-**Date:** January 26, 2026  
-**Scenario:** Few hundred runs per quarter (~100-300 runs/quarter, ~33-100 runs/month)
+**Version:** 3.3
+**Date:** February 6, 2026
+**Baseline Scenario:** ~1,250 runs/month (3,000 clients x 5 runs/year)
 
 ---
 
 ## Executive Summary
 
-This cost analysis provides detailed projections for running the AI Data Engineering Agent at scale. Based on current Azure pricing (2026) and the assumption of **100-300 transformation runs per quarter**, we estimate:
+This cost analysis provides detailed projections for running the AI Data Engineering Agent at realistic production volumes. Based on customer estimates from the January 30, 2026 call, the baseline is **~1,250 runs/month** — significantly higher than our initial v2.0 estimate of 100 runs/month.
 
 ### Cost Summary
 
-| Scenario | Monthly Cost | Quarterly Cost | Annual Cost |
-|----------|-------------|----------------|-------------|
-| **Low Volume** (33 runs/month, 50% cache hit rate) | **$842** | **$2,526** | **$10,104** |
-| **Medium Volume** (67 runs/month, 60% cache hit rate) | **$1,456** | **$4,368** | **$17,472** |
-| **High Volume** (100 runs/month, 70% cache hit rate) | **$2,018** | **$6,054** | **$24,216** |
+| Scenario | Volume | Cache Hit | Monthly | Quarterly | Annual |
+|----------|--------|-----------|---------|-----------|--------|
+| **POC Pilot** (limited) | 50 runs/month | 0% | **$232** | **$696** | **$2,784** |
+| **Cold Start Q1** (full volume) | 1,250 runs/month | 0% | **$5,180** | **$15,540** | — |
+| **Steady State** (post-Q1) | 1,250 runs/month | 60% | **$3,595** | **$10,785** | **$43,140** |
+| **Steady State (optimized)** | 1,250 runs/month | 70% | **$2,690** | **$8,070** | **$32,280** |
+| **Busy Season Peak** | 1,500 runs/month | 50% | **$4,640** | **$13,920** | — |
 
-**Key Insight:** Cache hit rates dramatically reduce costs. After the first quarter of building up cached transformations, costs can drop by 40-60%.
+**Key Insight:** At realistic volumes (~1,250 runs/month) and 400K input / 100K output tokens per transformation, the two dominant costs are **Databricks Spark compute** (~62%) and **Azure OpenAI LLM** (~29%). Maximizing cache hit rates is the most impactful lever — each 10% improvement saves ~$263/month in LLM costs. Spot instances provide additional savings (~27%) on Spark compute.
 
 ## Cost Assumptions
 
 **Platform Decisions:**
-- **Big Data Processing:** Microsoft Fabric (F8 or F16 capacity)
-- **AI Agent Runtime:** Azure Container Apps - **Production-grade (4 vCPU, 8 GiB RAM)**
-- **LLM/AI Platform:** 
-  - GitHub Copilot SDK Enterprise ($39/month + overages)
-  - **Azure AI Foundry** for evaluation, tracing, and governance
-- **Code Cache:** Cosmos DB serverless
-- **User Interaction Storage:** Cosmos DB (separate container for feedback/tuning data)
-- **Audit Storage:** Immutable Blob Storage
+- **Big Data Processing:** Azure Databricks (Jobs Compute — per-job pricing)
+- **AI Agent Runtime:** Azure Durable Functions + **Microsoft Agent Framework** (customer's existing tech stack)
+- **LLM Backend:** Azure OpenAI (GPT-5.2) — **no platform fee**, pure per-token consumption
+- **Approved Code + Agent State + Audit Trail:** Cosmos DB serverless (3 containers: approved-code, agent-state, audit-trail)
+- **Approved Code Repository:** Cosmos DB (Sprint 1) / ADO Repos (future sprint)
+- **Audit Archive:** ADLS Gen2 immutable storage (WORM policy for legal hold)
+- **Output Destination:** Azure Synapse Analytics dedicated SQL pool (existing customer infrastructure — no incremental cost)
 
 **Key Cost Drivers:**
-1. **Azure AI Foundry:** Model evaluations, tracing, guardrails (~40-50% of total cost)
-2. **Fabric Spark Cluster:** Execution engine (~25-30% of total cost)
-3. **Container Apps (Production):** 4 vCPU, 8 GiB for enterprise workload (~8-10%)
-4. **LLM API Calls:** Copilot SDK premium requests (varies by cache hit rate)
-5. **Cosmos DB:** Code cache + user interaction history
+1. **Azure Databricks:** Per-job Spark compute (~62% of total cost at steady state)
+2. **Azure OpenAI tokens:** LLM calls for profiling, pseudocode, PySpark generation (~29%)
+3. **ADLS Gen2:** Data storage and I/O (~6%)
+4. **Agent Runtime (Durable Functions):** Hosting the agent process (~2%)
+5. **Cosmos DB + Audit Archive:** Minor line items (~1%)
 
 ---
 
 ## Azure Pricing (2026)
 
-### Azure Container Apps (Production)
-- **vCPU:** $0.000024 per vCPU-second
-- **Memory:** $0.000003 per GiB-second
-- **Configuration:** **4 vCPU + 8 GiB RAM**, 24/7 operation (enterprise-grade)
-- **Monthly cost:** ~$200-300 depending on utilization
+### Agent Runtime: Azure Durable Functions
 
-### Azure AI Foundry
-**Model Evaluation:**
-- **GPT-4 evaluation runs:** $0.03 per 1K tokens input, $0.06 per 1K tokens output
-- **Custom evaluators:** $50-150/month for compute
-- **Estimated:** 100-200 evaluation runs/month = $1,000-1,500/month
+**Consumption Plan (Y1) — used for POC:**
+- **Executions:** $0.20 per million (first 1M/month free)
+- **Duration:** $0.000016/GB-s (first 400K GB-s/month free)
+- **POC cost:** Effectively **$0/month** at 50 runs — well within free grants
+- **Note:** Orchestrator replays count as separate invocations; Azure Storage transactions for state persistence billed separately
 
-**Tracing & Observability:**
-- **Trace storage:** $0.10 per GB
-- **Trace queries:** $0.50 per 100K queries
-- **Estimated:** Full tracing for 300-1,000 runs = $300-500/month
+**Premium Plan (EP1) — for production:**
+- **Instance cost:** $0.084/hour (~$61/month for 1 always-on instance)
+- **Includes:** Unlimited executions, no orchestrator replay charges, VNet integration, pre-warmed instances
+- **Monthly cost:** ~$61-120 depending on scaling (1-2 EP1 instances)
 
-**Content Safety & Guardrails:**
-- **Per-request screening:** $0.001 per request
-- **Estimated:** All AI generations screened = $50-100/month
+**Why Durable Functions:** Already in customer's tech stack, provides native durable orchestration for human-in-the-loop workflows (agent pauses at review checkpoints, resumes on auditor response), avoids introducing new services per CTO guardrails
 
-**Total AI Foundry:** ~$1,500-2,000/month
+### Azure OpenAI (LLM Backend)
+**No platform fee** — pure per-token consumption.
 
-### Microsoft Fabric
-- **F8 Capacity (Reserved 1-year):** $625/month
-- **F16 Capacity (Reserved 1-year):** $1,251/month (for busy season burst)
-- **Pay-as-you-go:** Higher rates, use reserved for cost optimization
+| Model | Input (per 1M tokens) | Output (per 1M tokens) | Notes |
+|-------|----------------------|------------------------|-------|
+| **GPT-5.2** | $1.75 | $14.00 | All phases — pseudocode, code gen, profiling |
 
-### GitHub Copilot SDK
-- **Enterprise tier:** $39/user/month base
-- **Included:** 1,000 premium requests/month
-- **Overage:** $0.04 per additional premium request
-- **Premium request = full AI analysis cycle (parsing + generation)**
+**Token Usage Per Transformation (estimated):**
+
+| Phase | Input Tokens | Output Tokens | Cost |
+|-------|-------------|---------------|------|
+| Data profiling | ~50,000 | ~10,000 | $0.23 |
+| Pseudocode generation | ~150,000 | ~40,000 | $0.82 |
+| Human feedback iteration (avg 1 round) | ~80,000 | ~20,000 | $0.42 |
+| PySpark code generation | ~80,000 | ~25,000 | $0.49 |
+| Integrity check analysis | ~40,000 | ~5,000 | $0.14 |
+| **Total per new transformation** | **~400,000** | **~100,000** | **~$2.10** |
+
+**Monthly LLM Costs:**
+
+| Runs/Month | Cache Hit Rate | New Transforms | LLM Cost/Month |
+|------------|---------------|----------------|----------------|
+| 50 | 0% | 50 | **$105** |
+| 1,250 | 0% (cold start) | 1,250 | **$2,625** |
+| 1,250 | 60% | 500 | **$1,050** |
+| 1,250 | 70% | 375 | **$788** |
+| 1,500 | 50% | 750 | **$1,575** |
+
+### Azure Databricks (Jobs Compute)
+- **DBU cost:** $0.15 per DBU-hour (Jobs Compute, Standard tier)
+- **VM cost:** Standard_DS3_v2 at $0.293/hour per node
+- **Cluster config:** 3-node (1 driver + 2 workers), 6 DBUs/hour total
+- **All-in hourly rate:** $1.78/hour ($0.90 DBU + $0.88 VMs)
+- **Spot instances:** ~80% discount on worker **VMs only** (DBU charges are not discounted)
+  - Driver on-demand: $0.293/hr + Workers Spot: 2 x $0.054/hr = $0.108/hr + DBU: $0.90/hr
+  - **Spot all-in rate: $1.30/hour** (27% savings vs on-demand)
+- **Key advantage:** Pay only when jobs run — no idle capacity charges
+
+**Important:** All runs require Spark execution — including approved code reruns (which skip AI processing but still run the PySpark). Databricks cost scales with **total runs**, not just new transforms.
+
+> **Standard tier retirement notice:** Azure Databricks Standard tier retires **October 1, 2026** (no new Standard workspaces after April 1, 2026). After retirement, Premium tier DBU rate of $0.30/DBU-hr applies — doubling the DBU component from $0.90 to $1.80/hr. All estimates below use Standard tier pricing. See Risk Factors for Premium tier impact.
+
+### Microsoft Agent Framework
+- **Platform fee:** $0 (open-source SDK, MIT license)
 
 ### Azure Cosmos DB (Serverless)
-**Code Cache Container:**
 - **RU cost:** $0.25 per 1M RUs
 - **Storage:** $0.25 per GB/month
-- **Estimated:** 10-20GB, 1-2M RUs/month = ~$8-15/month
-
-**User Interaction Container:**
-- Stores: User feedback, approval history, conversation logs
-- Purpose: Future model tuning, pattern analysis
-- **Estimated:** 5-10GB, 500K RUs/month = ~$5-10/month
+- **Estimated:** $5-25/month depending on volume
 
 ### Azure Data Lake Storage Gen2 (Hot Tier)
 - **Storage:** $0.0184 per GB/month
 - **Transactions:** $0.004-0.05 per 10K operations
-- **Estimated:** ~$85-150/month depending on volume
+- **Estimated:** ~$85-300/month depending on volume
 
-### Immutable Blob Storage (Audit Trail)
-- **Storage:** $0.018 per GB/month
-- **Immutability:** No extra charge for policy
+### ADLS Gen2 Immutable Storage (Audit Archive)
+- **Storage:** $0.018 per GB/month (WORM policy — no additional cost over hot tier)
 - **Estimated:** ~$10-20/month
+- **Purpose:** Legal hold archive for code snapshots, execution logs, and approval records
 
-### Azure Monitor (Application Insights)
-- **First 5 GB/month:** Free
-- **Beyond 5 GB:** $2.30 per GB
-- **Estimated:** ~$25-50/month for enterprise logging
-
----
-
-## Detailed Cost Breakdown by Component
-
-### 1. Azure Container App (AI Agent Runtime)
-
-**Configuration:**
-- 2 vCPU, 4 GiB RAM
-- Running 24/7 for orchestration and quick response
-- Scales to 0 when not processing (saves costs)
-
-**Calculation:**
-```
-vCPU cost: 2 vCPU × $0.000024/sec × 2,592,000 sec/month = $124.42/month
-Memory cost: 4 GiB × $0.000003/sec × 2,592,000 sec/month = $31.10/month
-Total (24/7): $155.52/month
-
-With scale-to-zero (assume 40% active time):
-$155.52 × 0.4 = $62.21/month
-```
-
-**Monthly Cost:** **$60-155** (depending on utilization)  
-**Recommended:** $75/month (assuming some idle time)
+### Azure Synapse Analytics (Dedicated SQL Pool)
+- **Cost:** $0 incremental — existing customer infrastructure already in production
+- **Purpose:** Output destination for transformed data (loaded into existing tables)
 
 ---
 
-### 2. Azure Data Lake Storage Gen2
+## Detailed Cost Scenarios
 
-**Assumptions per run:**
-- Input data: 5 GB average per client
-- Output data: 3 GB average (compressed Parquet)
-- Mapping file: 1 MB
-- Sample reads: 100 rows ≈ 1 MB
+### Scenario 1: POC Pilot (50 runs/month, 0% cache hit)
 
-**Storage Costs:**
-```
-100 clients × 8 GB (input + output) = 800 GB
-Storage: 800 GB × $0.0184/GB = $14.72/month
-
-(Storage accumulates over time; assuming 1-month retention for processed data)
-```
-
-**Transaction Costs (per run):**
-```
-Read operations:
-- Mapping file: 1 read = $0.0000004
-- Sample data (100 rows): 1 read = $0.0000004
-- Full data read: 5 GB / 4 MB per transaction = 1,280 transactions = $0.00051
-
-Write operations:
-- Output data: 3 GB / 4 MB = 768 transactions = $0.0038
-
-Per run: $0.004 (negligible)
-```
-
-**Monthly Transaction Costs (100 runs):**
-```
-100 runs × $0.004 = $0.40/month
-```
-
-**Monthly ADLS Cost:** **$15-30/month** (storage dominates)
-
----
-
-### 3. AI Processing (GitHub Copilot SDK)
-
-**Assumptions:**
-- Each new transformation requires 2 premium requests (analysis + code generation)
-- Each cached transformation requires 0 premium requests (deterministic re-run)
-
-**Copilot SDK Costs:**
-
-**Base subscription:**
-```
-Enterprise tier: $39/month (includes 1,000 premium requests)
-```
-
-**Premium Request Usage:**
-
-| Runs/Month | Cache Hit Rate | New Transforms | Premium Requests | Overage Cost |
-|------------|---------------|----------------|------------------|--------------|
-| 33         | 50%           | 17             | 34              | $0 (within limit) |
-| 67         | 60%           | 27             | 54              | $0 (within limit) |
-| 100        | 70%           | 30             | 60              | $0 (within limit) |
-| 100        | 30%           | 70             | 140             | $0 (within limit) |
-| 150        | 50%           | 75             | 150             | $0 (within limit) |
-| 300        | 40%           | 180            | 360             | $0 (within limit) |
-| 500        | 50%           | 250            | 500             | $0 (within limit) |
-
-**Monthly Copilot Cost:** **$39/month** (covers up to 500 premium requests)
-
-**Note:** Even at high volume (300 runs/month with low cache hit rates), we stay well within the 1,000 request limit.
-
----
-
-### 4. Spark Processing (Choose One)
-
-#### Option A: Azure Databricks (Jobs Compute)
-
-**Cluster Configuration:**
-- 3-node cluster (1 driver + 2 workers)
-- Node type: Standard_DS3_v2 (4 cores, 14 GB RAM each)
-- DBUs per node: 2 DBUs/hour
-
-**Hourly Cost:**
-```
-DBU cost: 6 DBUs/hour × $0.15/DBU = $0.90/hour
-VM cost: 3 nodes × $0.27/hour = $0.81/hour
-Total: $1.71/hour
-```
-
-**Processing Time Estimates:**
-- Small job (1-3 GB): 0.5 hours
-- Medium job (3-7 GB): 1.0 hour
-- Large job (7-10 GB): 1.5 hours
-- Average: 1 hour per job
-
-**Monthly Costs:**
-
-| Runs/Month | Cache Hit Rate | New Jobs | Hours | Monthly Cost |
-|------------|---------------|----------|-------|--------------|
-| 33         | 50%           | 17       | 17    | $29         |
-| 67         | 60%           | 27       | 27    | $46         |
-| 100        | 70%           | 30       | 30    | $51         |
-| 100        | 30%           | 70       | 70    | $120        |
-| 150        | 50%           | 75       | 75    | $128        |
-| 300        | 40%           | 180      | 180   | $308        |
-
-**Databricks Monthly Cost:** **$30-310/month** (volume-dependent)  
-**Typical (100 runs, 70% cache):** **$51/month**
-
-**Optimization Tips:**
-- Use Spot instances (40-80% discount) for non-critical jobs
-- Enable autoscaling to reduce idle time
-- Use Delta Live Tables for better performance
-
----
-
-#### Option B: Microsoft Fabric
-
-**Capacity Configuration:**
-- F8 Capacity (8 CUs) for medium workloads
-- OR F16 Capacity (16 CUs) for high workloads
-
-**Pricing:**
-- **F8:** $1,051/month pay-as-you-go (or $625/month reserved)
-- **F16:** $2,102/month pay-as-you-go (or $1,251/month reserved)
-
-**Processing:**
-- Fabric charges by capacity, not per job
-- Can handle multiple concurrent jobs
-- Burst above capacity with overage charges
-
-**Monthly Costs:**
-
-| Scenario | Base Capacity | Utilization | Overage | Total Monthly |
-|----------|--------------|-------------|---------|---------------|
-| Low (33 runs/month) | F8 reserved | 30% | $0 | **$625** |
-| Medium (67 runs/month) | F8 reserved | 60% | $50 | **$675** |
-| High (100 runs/month) | F16 reserved | 50% | $0 | **$1,251** |
-
-**Fabric Monthly Cost:** **$625-1,251/month**
-
-**Key Difference:** Fabric is a fixed capacity model vs. Databricks' per-job pricing.
-
-**When Fabric is Cheaper:**
-- High volume (200+ jobs/month)
-- Mixed workloads (not just batch ETL)
-- Already using Power BI/Synapse
-
-**When Databricks is Cheaper:**
-- Low to medium volume (< 150 jobs/month)
-- Batch-only workloads
-- Can leverage Spot instances
-
-**Recommendation:** For this use case (100-300 runs/quarter with caching), **Databricks is more cost-effective** at **$30-120/month** vs. Fabric at **$625-1,251/month**.
-
----
-
-### 5. Code Cache (Cosmos DB Serverless)
-
-**Assumptions:**
-- Cache entries: ~300 unique client transformations
-- Each entry: ~50 KB (pseudocode + PySpark code)
-- Operations: 2 reads per run (lookup + stats update), 1 write per new transformation
-
-**Storage:**
-```
-300 clients × 50 KB = 15 MB = 0.015 GB
-Storage cost: 0.015 GB × $0.25/GB = $0.00375/month (negligible)
-```
-
-**Request Units (RUs):**
-```
-Per cache hit:
-- Read cache entry: 5 RUs
-- Update execution stats: 5 RUs
-Total: 10 RUs
-
-Per cache miss (new transformation):
-- Read attempt: 5 RUs
-- Write new entry: 10 RUs
-Total: 15 RUs
-```
-
-**Monthly RU Costs (100 runs/month, 70% cache hit rate):**
-```
-Cache hits: 70 runs × 10 RUs = 700 RUs
-Cache misses: 30 runs × 15 RUs = 450 RUs
-Total: 1,150 RUs
-
-Cost: 1,150 / 1,000,000 × $0.25 = $0.0003/month (negligible)
-```
-
-**Monthly Cosmos DB Cost:** **$1-3/month** (mostly minimum storage charge)
-
----
-
-### 6. Networking & Data Transfer
-
-**Assumptions:**
-- Container App, ADLS, Databricks in same Azure region
-- No cross-region data transfer
-- No egress to internet
-
-**Cost:** **$0/month** (all in-region, private networking)
-
-**If cross-region:** ~$0.02-0.05/GB egress
-
----
-
-### 7. Monitoring (Application Insights)
-
-**Log Volume Estimates:**
-- Container App logs: ~100 MB/day
-- Databricks logs: ~50 MB/job
-- Total: ~3-5 GB/month
-
-**Cost:**
-- First 5 GB: Free
-- Additional: $2.30/GB
-
-**Monthly Monitoring Cost:** **$0-10/month**
-
----
-
-## Complete Cost Scenarios
-
-### Scenario 1: Low Volume (33 runs/month, 50% cache hit rate) - **FABRIC**
-
-**First Quarter (Building Cache):**
-| Component | Monthly Cost | Notes |
-|-----------|-------------|-------|
-| Container Apps | $75 | 24/7 runtime |
-| ADLS Gen2 | $20 | Storage + transactions |
-| Copilot SDK | $39 | Enterprise tier |
-| **Microsoft Fabric (F8)** | **$625** | Reserved 1-year capacity |
-| Cosmos DB Cache | $2 | Serverless |
-| Monitoring | $5 | Application Insights |
-| **Total** | **$766/month** | |
-| **Quarterly** | **$2,298** | |
-
-**Subsequent Quarters (Established Cache):**
-Same costs (Fabric is fixed capacity pricing)
-| **Total** | **$766/month** | |
-| **Quarterly** | **$2,298** | |
-| **Annual** | **$9,192** | |
-
----
-
-### Scenario 2: Medium Volume (67 runs/month, 60% cache hit rate) - **FABRIC**
-
-**First Quarter (Building Cache):**
-| Component | Monthly Cost | Notes |
-|-----------|-------------|-------|
-| Container Apps | $75 | 24/7 runtime |
-| ADLS Gen2 | $25 | More storage |
-| Copilot SDK | $39 | Enterprise tier |
-| **Microsoft Fabric (F8)** | **$625** | Reserved 1-year capacity |
-| Cosmos DB Cache | $2 | Serverless |
-| Monitoring | $7 | More logs |
-| **Total** | **$773/month** | |
-| **Quarterly** | **$2,319** | |
-
-**Subsequent Quarters (Cache Stabilizes):**
-| **Total** | **$773/month** | |
-| **Quarterly** | **$2,319** | |
-| **Annual** | **$9,276** | |
-
----
-
-### Scenario 3: High Volume (100 runs/month, 70% cache hit rate) - **FABRIC**
-
-**Context:** Post-initial rollout baseline (from original cost analysis)
+**Context:** Initial POC with 3-4 test engagements, limited volume
 
 | Component | Monthly Cost | Notes |
 |-----------|-------------|-------|
-| Container Apps | $85 | Higher utilization |
-| ADLS Gen2 | $30 | More storage |
-| Copilot SDK | $39 | Enterprise tier |
-| **Microsoft Fabric (F8)** | **$625** | Reserved 1-year capacity |
-| Cosmos DB Cache | $3 | More operations |
-| Monitoring | $10 | More logs |
-| **Total** | **$792/month** | |
-| **Quarterly** | **$2,376** | |
-| **Annual** | **$9,504** | |
-
-**Per-run cost:** $792 / 100 = **$7.92/run**
+| Agent Runtime (Durable Functions) | $0 | Consumption plan — within free grants at POC volume |
+| ADLS Gen2 | $20 | Small storage footprint |
+| Azure OpenAI (LLM) | $105 | 50 new transforms x $2.10 |
+| Azure Databricks | $89 | 50 jobs x 1hr x $1.78/hr |
+| Cosmos DB (serverless) | $8 | 3 containers, minimal volume |
+| ADLS Immutable Archive | $10 | WORM-protected audit archive |
+| **Total** | **$232/month** | |
 
 ---
 
-### Scenario 4: Normal Operations (350 runs/month, 60% cache hit rate) - **FABRIC**
+### Scenario 2: Cold Start Q1 (1,250 runs/month, 0% cache hit)
 
-**Context:** Typical monthly volume across 3,000 clients (300-400 runs/month average)
-
-**Assumptions:**
-- 350 runs/month = 4,200 runs/year
-- 60% cache hit (lower than baseline due to more schema variations)
-- F8 capacity sufficient for this volume
-- 140 new AI analyses/month (40% cache miss)
+**Context:** First quarter at full volume — every transformation is new. No existing PySpark to migrate (current system uses Spark notebooks + M code/Power Query).
 
 | Component | Monthly Cost | Notes |
 |-----------|-------------|-------|
-| Container Apps | $120 | Higher sustained load |
-| ADLS Gen2 | $85 | 3.5x storage/transactions |
-| Copilot SDK | $39 + $6 overage | 1,140 premium requests (140 over quota) |
-| **Microsoft Fabric (F8)** | **$625** | Reserved capacity handles load |
-| Cosmos DB Cache | $8 | 3.5x operations, more storage |
-| Monitoring | $25 | 3.5x logs |
-| **Total** | **$908/month** | |
-| **Quarterly** | **$2,724** | |
-| **Annual** | **$10,896** | |
+| Agent Runtime (Durable Functions) | $85 | EP1 Premium, some scaling headroom |
+| ADLS Gen2 | $200 | 1,250 clients x ~8GB I/O |
+| **Azure OpenAI (LLM)** | **$2,625** | **1,250 new transforms x $2.10** |
+| **Azure Databricks** | **$2,225** | **1,250 jobs x 1hr x $1.78/hr** |
+| Cosmos DB (serverless) | $30 | Building approved code store + high audit write volume |
+| ADLS Immutable Archive | $15 | WORM-protected audit archive |
+| **Total** | **$5,180/month** | |
+| **3-Month Cold Start** | **$15,540** | |
 
-**Per-run cost:** $908 / 350 = **$2.59/run**
+**Per-run cost:** $5,180 / 1,250 = **$4.14/run** (vs. $800 manual = **99.5% reduction**)
+
+**With Spot instances** (driver on-demand, workers ~80% discount): Total drops to ~$4,580/month
 
 ---
 
-### Scenario 5: Audit Busy Season Peak (1,000 runs/month, 50% cache hit) - **FABRIC F16**
+### Scenario 3: Steady State (1,250 runs/month, 60% cache hit)
+
+**Context:** Post-Q1 once cache is partially built. 60% of runs are cache hits (skip AI processing, still execute PySpark on Spark).
+
+| Component | Monthly Cost | Notes |
+|-----------|-------------|-------|
+| Agent Runtime (Durable Functions) | $85 | EP1 Premium, steady load |
+| ADLS Gen2 | $200 | Same I/O volume |
+| **Azure OpenAI (LLM)** | **$1,050** | **500 new transforms x $2.10** |
+| **Azure Databricks** | **$2,225** | **1,250 jobs x 1hr x $1.78/hr** (all runs need Spark) |
+| Cosmos DB (serverless) | $20 | Mature approved code store, mostly reads + audit writes |
+| ADLS Immutable Archive | $15 | WORM-protected audit archive |
+| **Total** | **$3,595/month** | |
+| **Quarterly** | **$10,785** | |
+| **Annual** | **$43,140** | |
+
+**Per-run cost:** $3,595 / 1,250 = **$2.88/run**
+
+**Note:** Approved code reuse saves LLM costs but NOT Spark costs — all runs execute PySpark regardless. Cache optimization is now the biggest single lever for cost reduction.
+
+---
+
+### Scenario 3b: Steady State Optimized (Spot instances + 70% cache)
+
+| Component | Monthly Cost | Notes |
+|-----------|-------------|-------|
+| Agent Runtime (Durable Functions) | $70 | EP1 Premium, optimized |
+| ADLS Gen2 | $180 | Lifecycle management |
+| Azure OpenAI (LLM) | $788 | 375 new transforms x $2.10 |
+| **Azure Databricks (Spot)** | **$1,625** | **1,250 jobs x 1hr x $1.30/hr** |
+| Cosmos DB (serverless) | $15 | Mature approved code store + steady audit |
+| ADLS Immutable Archive | $12 | WORM-protected audit archive |
+| **Total** | **$2,690/month** | |
+| **Quarterly** | **$8,070** | |
+| **Annual** | **$32,280** | |
+
+**Per-run cost:** $2,690 / 1,250 = **$2.15/run**
+
+**Spot breakdown:** Spot discounts only the VM component (~80% on workers), not DBU charges. Driver stays on-demand for job reliability. Savings: $2,225 -> $1,625/month (**27% reduction** on Databricks compute).
+
+---
+
+### Scenario 4: Busy Season Peak (1,500 runs/month, 50% cache hit)
 
 **Context:** February-April peak load (3 months/year)
 
-**Assumptions:**
-- 1,000 runs/month = surge capacity
-- 50% cache hit (more schema changes during busy season)
-- F16 capacity needed for 3 months (2x F8)
-- 500 new AI analyses/month
-
-**Peak Season Costs (3 months):**
 | Component | Monthly Cost | Notes |
 |-----------|-------------|-------|
-| Container Apps | $240 | Near 100% utilization |
-| ADLS Gen2 | $240 | 10x normal storage/transactions |
-| Copilot SDK | $39 + $60 overage | 2,500 premium requests (1,500 over quota) |
-| **Microsoft Fabric (F16)** | **$1,251** | Reserved 2x capacity for burst |
-| Cosmos DB Cache | $20 | 10x operations |
-| Monitoring | $50 | Heavy logging |
-| **Total** | **$1,900/month** | |
-| **3-Month Busy Season** | **$5,700** | |
+| Agent Runtime (Durable Functions) | $100 | EP1 Premium, higher scaling |
+| ADLS Gen2 | $250 | Higher I/O |
+| **Azure OpenAI (LLM)** | **$1,575** | **750 new transforms x $2.10** |
+| **Azure Databricks** | **$2,670** | **1,500 jobs x 1hr x $1.78/hr** |
+| Cosmos DB (serverless) | $30 | High volume + audit |
+| ADLS Immutable Archive | $15 | WORM-protected audit archive |
+| **Total** | **$4,640/month** | |
+| **3-Month Busy Season** | **$13,920** | |
 
-**Per-run cost:** $1,900 / 1,000 = **$1.90/run**
-
-**Off-Season (9 months):** Use Scenario 4 pricing
-- 9 months × $908/month = $8,172
-
-**Annual Total:** $5,700 (busy) + $8,172 (normal) = **$13,872/year**
+**With Spot instances:** ~$3,920/month, $11,760/quarter
 
 ---
 
-### Scenario 6: Initial Rollout (100 runs/month, 0% cache hit) - **FABRIC**
+## Annual Cost Projections
 
-**Context:** First 3 months while building transformation cache
+### Year 1 (Building Cache)
 
-**Assumptions:**
-- Every run requires full AI analysis (no cache)
-- F8 capacity sufficient
-- Higher Copilot usage
+| Quarter | Runs/Month | Cache Hit | Monthly Avg | Quarterly Cost |
+|---------|------------|-----------|-------------|----------------|
+| Q1 (cold start) | 1,250 | 0% | $5,180 | $15,540 |
+| Q2 (building) | 1,250 | 40% | $4,125 | $12,375 |
+| Q3 (maturing) | 1,250 | 60% | $3,595 | $10,785 |
+| Q4 (optimized) | 1,250 | 70% | $3,333 | $10,000 |
+| **Year 1 Total** | | | | **$48,700** |
 
-| Component | Monthly Cost | Notes |
-|-----------|-------------|-------|
-| Container Apps | $100 | High AI processing time |
-| ADLS Gen2 | $30 | Same as Scenario 3 |
-| Copilot SDK | $39 + $12 overage | 1,300 premium requests (300 over quota) |
-| **Microsoft Fabric (F8)** | **$625** | Reserved capacity |
-| Cosmos DB Cache | $1 | Building cache, few hits |
-| Monitoring | $15 | Heavy initial logging |
-| **Total** | **$822/month** | |
-| **3-Month Rollout** | **$2,466** | |
+**With Spot instances throughout Year 1: ~$41,500**
 
-**Per-run cost:** $822 / 100 = **$8.22/run**
+### Year 2+ (Steady State)
 
-After 3 months, transitions to Scenario 3 or 4 as cache builds up.
+| Quarter | Runs/Month | Cache Hit | Monthly Avg | Quarterly Cost |
+|---------|------------|-----------|-------------|----------------|
+| Q1 (busy season) | 1,500 | 50% | $4,640 | $13,920 |
+| Q2 | 1,250 | 70% | $3,333 | $10,000 |
+| Q3 | 1,250 | 75% | $3,201 | $9,600 |
+| Q4 | 1,250 | 75% | $3,201 | $9,600 |
+| **Year 2 Total** | | | | **$43,120** |
 
----
-
-### Scenario 4: Very High Volume (300 runs/quarter = 100 runs/month at steady state) - **FABRIC**
-
-**Optimized for Scale:**
-| Component | Monthly Cost | Notes |
-|-----------|-------------|-------|
-| Container Apps | $100 | Scale up for concurrency |
-| ADLS Gen2 | $50 | Large storage footprint |
-| Copilot SDK | $39 | Still within 1,000 requests |
-| **Microsoft Fabric (F8)** | **$625** | Reserved capacity handles load |
-| Cosmos DB Cache | $5 | Higher read/write volume |
-| Monitoring | $15 | Detailed logging |
-| **Total** | **$834/month** | |
-| **Quarterly** | **$2,502** | |
-| **Annual** | **$10,008** | |
-
-**Note:** At very high volumes (200+ jobs/month), Fabric's fixed capacity pricing becomes more economical than Databricks' per-job pricing.
+**With Spot instances: ~$35,900/year**
 
 ---
 
-## Cost Comparison: Databricks vs. Fabric
+## Why Databricks Over Fabric
 
-### For 100 runs/month with 70% cache hit rate:
+### For 1,250 runs/month with 60% cache hit rate:
 
-| Platform | Monthly Cost | Annual Cost | Notes |
-|----------|-------------|-------------|-------|
-| **Microsoft Fabric (F8 Reserved)** | **$792** | **$9,504** | **RECOMMENDED - First-party Microsoft** |
-| Databricks (Jobs Compute) | $218 | $2,616 | Cheaper but third-party vendor |
-| Fabric (F16 Reserved) | $1,413 | $16,956 | Overkill for this use case |
+| Platform | Monthly Spark Cost | Annual Spark Cost | Notes |
+|----------|-------------------|-------------------|-------|
+| **Azure Databricks (Jobs Compute)** | **$2,225** | **$26,700** | **Pay-per-job, scales with usage** |
+| **Azure Databricks (Spot)** | **$1,625** | **$19,500** | **~80% VM discount on workers** |
+| Microsoft Fabric (F8 Reserved) | $765 fixed + overage | $15,000+ | May need F16+ for this volume |
+| Microsoft Fabric (F16 Reserved) | $1,251 fixed | $15,012 | Competitive at high volume |
 
-**Why Start with Fabric Despite Higher Cost:**
-1. **First-party Microsoft service** - Better integration with Azure ecosystem
-2. **Unified platform** - OneLake, Power BI, Synapse all in one
-3. **Simpler procurement** - No additional vendor relationships
-4. **Enterprise support** - Microsoft Premier support covers everything
-5. **Future-proof** - Easier to add other analytics workloads
-6. **Can optimize later** - Can switch to Databricks if cost becomes issue
+**At 1,250 runs/month, Fabric F16 is cheaper** than Spot-optimized Databricks. However, Databricks is preferred because:
+1. Customer already uses Databricks (no new service)
+2. Per-job cost transparency (attribute costs per client)
+3. Spot instances give 60% discount on workers
+4. Autoscaling (1-5 workers) matches variable job sizes
+5. No capacity management overhead
 
-**Cost Trade-off:**
-- **Additional cost:** $574/month ($6,888/year) vs Databricks
-- **Value gained:** Unified Microsoft platform, simpler operations, better compliance
-- **When to reconsider:** If processing 200+ jobs/month with high cache hit rates, Databricks becomes $1K+/month cheaper
+**Recommendation:** Databricks with Spot instances for Year 1. Evaluate Fabric if customer consolidates to Azure-native stack in Year 2+.
+
+---
+
+## LLM Model Options
+
+### GPT-5.2 vs. Alternatives
+
+Our design uses GPT-5.2 ($1.75/M input, $14.00/M output) for all phases — single model deployment simplifies operations. At ~400K input / ~100K output tokens per transformation, LLM is a significant cost driver.
+
+| Approach | Cost per New Transform | Monthly LLM at 500 new | Notes |
+|----------|----------------------|----------------------|-------|
+| **GPT-5.2 (all phases)** | **$2.10** | **$1,050** | **Current baseline — single model, simplest ops** |
+| GPT-5.2 + GPT-4o-mini (mixed) | $1.51 | $755 | 5.2 for pseudocode/feedback, mini for code gen + profiling — 28% savings |
+| GPT-4o-mini (all phases) | $0.12 | $60 | Cheapest option — may sacrifice quality on pseudocode |
+
+**Recommendation:** Start with GPT-5.2 for all phases (best quality, simplest ops). If LLM costs need reduction, tier down code generation and profiling to GPT-4o-mini — these are mechanical tasks where mini's quality is sufficient. This saves ~$295/month at 60% cache rate.
 
 ---
 
 ## Cost Optimization Strategies
 
-### 1. Maximize Cache Hit Rates
-**Impact:** Each cache hit saves ~1 hour of Spark processing ($1.71)
+### 1. Maximize Cache Hit Rates (Biggest Lever)
+**Impact:** Each 10% cache improvement saves **~$263/month** in LLM costs
 
-| Cache Hit Rate | Monthly Spark Cost (100 runs) | Savings vs. 0% cache |
-|----------------|------------------------------|---------------------|
-| 0% (no cache) | $171 | - |
-| 50% | $86 | $85/month |
-| 70% | $51 | $120/month |
-| 90% | $17 | $154/month |
+At 1,250 runs/month:
+| Cache Hit Rate | New Transforms | LLM Cost | Total Monthly |
+|----------------|----------------|----------|---------------|
+| 0% | 1,250 | $2,625/month | $5,180 |
+| 50% | 625 | $1,313/month | $3,858 |
+| 60% | 500 | $1,050/month | $3,595 |
+| 70% | 375 | $788/month | $3,333 |
+| 80% | 250 | $525/month | $3,070 |
 
-**Recommendation:** Focus on cache warming in first quarter. Aim for 70-80% hit rate by Q2.
+**Note:** Approved code reuse saves LLM costs but not Spark costs (all runs execute PySpark).
 
-### 2. Use Spot Instances (Databricks Only)
-**Impact:** 40-80% discount on VM costs
+### 2. Spot Instances
+**Impact:** ~80% discount on Databricks worker **VMs only** (DBU charges are not discounted)
 
 ```
-Standard cluster: $1.71/hour
-Spot cluster: $0.69/hour (60% discount)
+On-demand: 1,250 jobs x $1.78/hr = $2,225/month
+Spot:      1,250 jobs x $1.30/hr = $1,625/month
+Savings:   $600/month ($7,200/year)
 
-Savings on 30 jobs: 30 × ($1.71 - $0.69) = $30.60/month
+Breakdown of Spot rate ($1.30/hr):
+  DBU:     6 x $0.15       = $0.90/hr  (fixed, never discounted)
+  Driver:  1 x $0.293      = $0.293/hr (on-demand for reliability)
+  Workers: 2 x $0.054      = $0.108/hr (Spot at ~81% discount)
 ```
 
-**Risk:** Jobs may be interrupted (rare for 1-hour jobs)
+**Risk:** Worker VMs may be preempted (rare for 1-hour jobs). Driver stays on-demand to ensure job coordination.
 
-### 3. Right-Size Clusters
-- Start with smaller cluster (2 workers instead of 3)
-- Enable autoscaling (1-5 workers)
-- Use cluster pools for faster startup
+### 3. Model Tiering
+- GPT-5.2 for pseudocode generation + human feedback (where reasoning quality matters)
+- GPT-4o-mini for code generation, profiling, and integrity checks (mechanical tasks)
+- **Savings:** ~$295/month at 60% cache ($1,050 -> $755 LLM)
+- **Trade-off:** Two model deployments to manage
 
-**Potential savings:** 20-30% on Databricks costs
+### 4. Right-Size Clusters
+- Use autoscaling (1-5 workers) based on data volume
+- Small jobs (1-3 GB): 2-node cluster ($1.19/hr)
+- Large jobs (7-10 GB): 4-node cluster ($2.37/hr)
+- **Potential savings:** 15-25% on Databricks costs
 
-### 4. Optimize Container App Scaling
-- Scale to 0 during off-hours
-- Reduce memory if AI workload is CPU-bound
+### 5. Batch Processing
+- Group multiple small clients into single Spark session
+- Process overnight during off-peak hours
+- **Potential savings:** 10-20% on Spark startup overhead
 
-**Potential savings:** $40-80/month on Container App costs
-
-### 5. Use ADLS Lifecycle Management
+### 6. ADLS Lifecycle Management
 - Move old data to Cool tier after 30 days
 - Archive after 90 days
-
-**Potential savings:** 50-80% on storage costs for historical data
-
-### 6. Batch Processing
-- Group multiple clients into single Spark job
-- Process overnight when clusters are cheaper
-
-**Potential savings:** 10-20% on overall Spark costs
-
----
-
-## Long-Term Cost Projections
-
-### Year 1 (Building to 300 runs/quarter) - **FABRIC**
-
-| Quarter | Runs | Cache Hit | Monthly Avg | Quarterly Cost |
-|---------|------|-----------|-------------|----------------|
-| Q1 | 100 | 20% | $792 | $2,376 |
-| Q2 | 200 | 50% | $810 | $2,430 |
-| Q3 | 250 | 65% | $820 | $2,460 |
-| Q4 | 300 | 75% | $834 | $2,502 |
-| **Year 1 Total** | | | | **$9,768** |
-
-### Year 2+ (Steady State at 300 runs/quarter) - **FABRIC**
-
-| Quarter | Runs | Cache Hit | Monthly Avg | Quarterly Cost |
-|---------|------|-----------|-------------|----------------|
-| Q1 | 300 | 80% | $834 | $2,502 |
-| Q2 | 300 | 82% | $834 | $2,502 |
-| Q3 | 300 | 83% | $834 | $2,502 |
-| Q4 | 300 | 85% | $834 | $2,502 |
-| **Year 2 Total** | | | | **$10,008** |
-
-**Key Insight:** With Fabric's fixed capacity pricing, costs remain stable regardless of cache hit rates (unlike Databricks where higher cache hits = lower costs). The benefit is predictable budgeting.
+- **Potential savings:** 50-80% on storage for historical data
 
 ---
 
@@ -626,165 +353,80 @@ Savings on 30 jobs: 30 × ($1.71 - $0.69) = $30.60/month
 
 **Assumptions:**
 - Manual data engineering: 8 hours per client onboarding
-- Data engineer salary: $100/hour fully loaded
+- Specialist salary: $100/hour fully loaded
 - Manual cost per client: $800
 
-**Break-Even Analysis:**
+**Annual Comparison:**
 
-| Runs/Quarter | Manual Cost | Agent Cost (Fabric Q1) | Agent Cost (Q2+) | Quarterly Savings |
-|--------------|-------------|------------------------|------------------|-------------------|
-| 100 | $80,000 | $2,376 | $2,376 | **$77,624** |
-| 200 | $160,000 | $2,430 | $2,430 | **$157,570** |
-| 300 | $240,000 | $2,502 | $2,502 | **$237,498** |
+| | Manual Process | Agent (Standard) | Agent (Spot Optimized) |
+|--|----------------|-------------------|----------------------|
+| 15,000 runs/year | $12,000,000 | $48,700 | $41,500 |
+| Cost per run | $800 | $3.25 | $2.77 |
+| **Savings** | — | **99.6%** | **99.7%** |
 
-**Payback Period:** Less than 1 day of manual work
+**Annual savings:** ~$11.95M — infrastructure cost is negligible vs. labor
 
-**Annual ROI (with Fabric):**
-- Investment: ~$10,000/year (agent infrastructure)
-- Savings: ~$320,000/year (400 clients/year × $800)
-- **ROI: 3,100%**
-
-**Note:** Even with Fabric's higher costs vs. Databricks, ROI remains exceptional due to massive manual labor savings.
+**ROI:** Infrastructure cost is negligible compared to labor savings.
 
 ---
 
-## Risk Factors & Contingencies
+## Risk Factors
 
-### 1. AI Costs Exceeding Estimates
-**Risk:** Complex transformations require more premium requests
+### 1. Databricks Standard Tier Retirement (Oct 2026)
+**Risk:** Standard tier ($0.15/DBU) retires October 2026. Premium tier ($0.30/DBU) will apply — doubling the DBU component.
+**Impact:** On-demand rate increases from $1.78/hr to $2.68/hr (+51%). Monthly Databricks cost jumps from $2,225 to $3,350 at 1,250 runs.
+**Mitigation:** Factor into Year 2 budget. Evaluate Fabric F16 ($1,251/month fixed) which becomes clearly cheaper at Premium DBU rates. Right-size clusters to reduce DBU count.
 
-**Mitigation:**
-- Monitor Copilot usage monthly
-- Set up budget alerts at $50/month
-- Cache aggressively
+### 2. Cold Start Cost Spike
+**Risk:** Q1 at 0% cache hits = $5,180/month (vs. $3,595 steady state)
+**Impact:** Significant — $1,585/month difference driven by LLM costs (all transforms are new)
+**Mitigation:** Spot instances bring Q1 cost to ~$4,580/month. Model tiering brings LLM portion down further.
 
-**Contingency:** Budget extra $20-40/month for overage
+### 3. Spark Processing Takes Longer
+**Risk:** Jobs average 1.5 hours instead of 1 hour
+**Impact:** +50% on Databricks costs (+$1,113/month on-demand, +$813/month Spot)
+**Mitigation:** Autoscaling, larger clusters for big datasets, batch processing
 
-### 2. Spark Processing Takes Longer
-**Risk:** Jobs average 2 hours instead of 1 hour
+### 4. LLM Costs Higher Than Estimated
+**Risk:** Complex transformations need more tokens or feedback iterations
+**Impact:** 2x token usage at 60% cache = $2,100/month LLM, total $4,645/month
+**Mitigation:** Model tiering (mini for code gen), approved code reuse, prompt optimization
 
-**Impact:** Double Databricks costs (+$51-171/month)
-
-**Mitigation:**
-- Optimize PySpark code with Copilot
-- Use larger cluster for large datasets
-- Implement job profiling
-
-### 3. Storage Growth Exceeds Projections
-**Risk:** Historical data accumulates
-
-**Impact:** +$10-30/month per additional TB
-
-**Mitigation:**
-- Implement ADLS lifecycle policies
-- Archive old data after 90 days
-- Delete redundant intermediate files
-
-### 4. Fabric Capacity Overages
-**Risk:** Burst beyond F8 capacity limits
-
-**Impact:** Overage charges ($131/CU-hour)
-
-**Mitigation:**
-- Only relevant if using Fabric
-- Monitor capacity utilization dashboard
-- Upgrade to F16 if consistently over 80%
+### 5. Databricks Cost Transparency
+**Risk:** Hard to attribute Spark costs per client
+**Mitigation:** Job tagging in Databricks, cost allocation by client_id
 
 ---
 
-## Recommendations
+## Summary
 
-### For 100-300 Runs/Quarter:
+### Realistic Production Costs (1,250 runs/month):
 
-1. **Choose Databricks over Fabric**
-   - Saves $569/month ($6,828/year)
-   - Better fit for batch ETL workloads
+| Configuration | Monthly | Annual |
+|--------------|---------|--------|
+| Standard (60% cache, on-demand) | $3,595 | $43,140 |
+| **Optimized (70% cache, Spot)** | **$2,690** | **$32,280** |
+| Aggressive (80% cache, Spot, model tiering) | $2,175 | $26,100 |
 
-2. **Invest in Cache Optimization**
-   - Target 70%+ cache hit rate by Q2
-   - Saves $120+/month in Spark costs
+### Per-Run Cost:
 
-3. **Start with Jobs Compute**
-   - Use All-Purpose clusters only for development
-   - 3x cheaper per hour
+| Configuration | Cost per Run | vs. $800 Manual |
+|--------------|-------------|-----------------|
+| Standard | $2.88 | **99.6% reduction** |
+| Optimized | $2.15 | **99.7% reduction** |
 
-4. **Enable Spot Instances**
-   - 60% discount on VMs
-   - Low risk for 1-hour jobs
+### Cost Distribution (Steady State, Standard):
 
-5. **Implement Cost Monitoring**
-   - Set up Azure Cost Management alerts
-   - Review monthly spending in Databricks dashboard
-   - Track cache hit rates
+| Component | % of Total | Monthly |
+|-----------|-----------|---------|
+| Azure Databricks | **62%** | $2,225 |
+| Azure OpenAI (GPT-5.2) | **29%** | $1,050 |
+| ADLS Gen2 | 6% | $200 |
+| Agent Runtime (Durable Functions) | 2% | $85 |
+| Cosmos DB (serverless) + ADLS Archive | 1% | $35 |
 
-6. **Plan for Scale**
-   - Current architecture supports 500+ runs/month
-   - Costs scale sub-linearly due to caching
-   - Can reduce per-run cost by 50% at higher volumes
-
----
-
-## Summary: Expected Costs
-
-### Conservative Estimate (100 runs/month with 70% cache hit rate):
-
-**Using Microsoft Fabric F8 (Reserved):**
-
-**Quarterly Cost: $2,376**  
-**Annual Cost: $9,504**
-
-**Breakdown:**
-- Container Apps: $85/month
-- ADLS: $30/month
-- Copilot SDK: $39/month
-- **Fabric F8: $625/month**
-- Cosmos DB: $3/month
-- Monitoring: $10/month
-
-### Optimistic Estimate (100 runs/month with 85% cache hit rate + optimizations):
-
-**Quarterly Cost: $2,200**  
-**Annual Cost: $8,800**
-
-(Savings from container scale-to-zero, reduced storage, etc.)
-
-### Per-Run Cost (at scale):
-
-| Volume | Cost per Run (Fabric) | Cost per Run (Databricks) | Manual Cost |
-|--------|----------------------|---------------------------|-------------|
-| 33 runs/month | $23.21 | $5.12 | $800 |
-| 67 runs/month | $11.54 | $2.90 | $800 |
-| 100 runs/month | $7.92 | $2.18 | $800 |
-| 200 runs/month | $4.17 | $1.65 | $800 |
-
-**Compare to Manual:** $800 per run → **99% cost reduction** (even with Fabric)
-
-**Key Insight:** Fabric has higher fixed costs but better TCO for Microsoft-first organizations. Can switch to Databricks later if volume justifies optimization.
+**Databricks and LLM are the two dominant costs (91% combined).** Maximizing cache hit rates is the single most impactful optimization — each 10% improvement saves ~$263/month in LLM costs. Spot instances provide an additional 27% reduction on Spark compute.
 
 ---
 
-## Next Steps
-
-1. **Start with POC in free/low tiers:**
-   - Free Container Apps tier (first 180K vCPU-sec)
-   - ADLS free tier (first month)
-   - Databricks trial or small cluster
-
-2. **Measure actual usage in Q1:**
-   - Track cache hit rates
-   - Monitor Spark job durations
-   - Assess AI request patterns
-
-3. **Optimize based on data:**
-   - Adjust cluster sizes
-   - Fine-tune caching strategy
-   - Consider Spot instances
-
-4. **Set up cost governance:**
-   - Monthly budget alerts
-   - Department chargebacks by client
-   - Regular cost reviews
-
----
-
-*This cost analysis will be updated quarterly as we collect actual usage data and pricing changes.*
+*This cost analysis reflects realistic production volumes from the January 30, 2026 customer call. Will be updated as POC data becomes available.*

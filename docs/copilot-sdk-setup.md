@@ -1,253 +1,168 @@
-# GitHub Copilot SDK Setup - Successful Integration
+# Agent Runtime Setup & Decision Log
 
-**Date:** January 26, 2026  
-**Status:** ✅ **WORKING**
-
-## Summary
-
-Successfully integrated GitHub Copilot SDK into the data engineering agent project. The SDK is fully operational and validates our thesis about leveraging production-grade agentic harnesses instead of building from scratch.
+**Date:** February 6, 2026
+**Status:** Pivoting to Microsoft Agent Framework
 
 ---
 
-## Environment Setup
+## Decision: GitHub Copilot SDK → Microsoft Agent Framework
 
-### Prerequisites Met
-- ✅ GitHub Copilot CLI installed (`v0.0.394`)
-- ✅ Python environment with UV package manager
-- ✅ `github-copilot-sdk==0.1.18` installed via `uv pip install`
+### Context
 
-### Key Configuration (Windows-Specific)
+In January 2026, we validated the GitHub Copilot SDK as a viable agentic harness for this project. The SDK worked well in testing (see historical validation below). However, after evaluating production timeline risks, we are pivoting to the **Microsoft Agent Framework** as our agent runtime.
 
-**Critical Discovery:** On Windows, must explicitly specify CLI path in client options:
+### Why We're Moving Away from Copilot SDK
+
+| Factor | Copilot SDK | Agent Framework |
+|--------|-------------|-----------------|
+| **GA Status** | Still in preview (no confirmed GA date) | Azure AI Foundry Agent Service: **GA since May 2025**; SDK: GA targeted Q1 2026 |
+| **Production Risk** | Customer cannot go live on a preview SDK | 10,000+ orgs already using Foundry Agent Service in production |
+| **Pricing** | $39/month flat subscription per seat | $0 platform fee — pure per-token consumption |
+| **Cost at 100 runs/month** | $39/month (fixed) | ~$7/month (consumption) — **82% cheaper** |
+| **Human-in-the-Loop** | Custom implementation needed | Built-in workflow checkpointing |
+| **State Persistence** | Custom implementation needed | Built-in `ChatMessageStore` with Cosmos DB support |
+| **Observability** | Custom logging | Built-in OpenTelemetry tracing |
+| **Migration Path** | N/A | Can wrap Copilot SDK as `GitHubCopilotAgent` if it reaches GA later |
+
+### Decision
+
+**Use Microsoft Agent Framework with `AzureOpenAIResponsesClient` as the primary LLM backend.**
+
+This gives us:
+- Direct Azure OpenAI access via Managed Identity (no API keys)
+- Consumption-based pricing (pay only for tokens used)
+- Production-grade workflow orchestration with checkpointing
+- Built-in MCP support for custom tools
+- OpenTelemetry tracing for audit compliance
+- Path to wrap Copilot SDK later if it reaches GA
+
+---
+
+## Microsoft Agent Framework Setup
+
+### Installation
+
+```bash
+# Install Agent Framework (preview — use --pre flag until GA)
+pip install agent-framework --pre
+
+# Or install specific sub-packages
+pip install agent-framework-core --pre
+pip install agent-framework-azure-ai --pre
+```
+
+**Requirements:**
+- Python >= 3.10
+- Azure OpenAI resource deployed with GPT-4o and/or GPT-4o-mini
+- Azure Managed Identity (for Container Apps deployment) or Azure CLI credential (for local dev)
+
+### Basic Agent Setup
 
 ```python
-from copilot import CopilotClient
+from agent_framework.azure import AzureOpenAIResponsesClient
+from agent_framework import ChatAgent, MCPStdioTool
+from azure.identity import DefaultAzureCredential
 
-client = CopilotClient({
-    "cli_path": r"C:\Users\<username>\AppData\Roaming\npm\copilot.cmd",
-    "log_level": "info"
-})
+# Initialize Azure OpenAI client (uses Managed Identity in production)
+client = AzureOpenAIResponsesClient(
+    credential=DefaultAzureCredential(),
+    azure_endpoint="https://<resource>.openai.azure.com",
+    model="gpt-4o",
+)
 
-await client.start()
+# Create agent
+agent = client.as_agent(
+    name="DataEngineeringAgent",
+    instructions="You are a data engineering agent that profiles data, "
+                 "generates transformation pseudocode, and creates PySpark code.",
+)
+
+# Run with MCP tools
+async with (
+    MCPStdioTool(name="adls-tools", command="python", args=["mcp_adls_server.py"]) as adls,
+    agent,
+):
+    result = await agent.run(
+        "Profile the source data and analyze the mapping spreadsheet.",
+        tools=[adls],
+    )
 ```
 
-**Why:** The SDK's default `copilot` lookup doesn't find the `.cmd` wrapper on Windows.
+### Workflow with Human-in-the-Loop Checkpointing
 
----
+```python
+from agent_framework.workflows import Workflow, checkpoint
+from agent_framework.workflows.storage import FileCheckpointStorage
 
-## Test Results
+class TransformationWorkflow(Workflow):
+    async def run(self, client_id: str, mapping_path: str):
+        # Phase 2: Profile data + generate pseudocode
+        pseudocode = await self.agent.run(
+            f"Profile data and generate pseudocode for {client_id}"
+        )
 
-### Test Script: `test_copilot_sdk.py`
+        # Phase 3: Checkpoint — pause for human review
+        approval = await checkpoint("pseudocode_review", {
+            "pseudocode": pseudocode,
+            "client_id": client_id,
+        })
 
-**Outcome:** ✅ All systems operational
+        if not approval.approved:
+            pseudocode = await self.agent.run(
+                f"Revise pseudocode based on feedback: {approval.feedback}"
+            )
 
-**Events Successfully Captured:**
-1. `PENDING_MESSAGES_MODIFIED` - Message queue updates
-2. `USER_MESSAGE` - User prompt received
-3. `ASSISTANT_TURN_START` - AI begins processing
-4. `SESSION_USAGE_INFO` - Token usage tracking
-5. `ASSISTANT_USAGE` - Model invocation metrics
-6. `ASSISTANT_MESSAGE` - AI response generated
-7. `ASSISTANT_REASONING` - Internal planning/reasoning
-8. `ASSISTANT_TURN_END` - Response complete
-9. `SESSION_IDLE` - Session ready for next interaction
+        # Phase 4: Generate PySpark + execute
+        pyspark = await self.agent.run(
+            f"Generate PySpark from approved pseudocode: {pseudocode}"
+        )
 
-### What This Proves
+        # Phase 5: Agent integrity checks
+        check_result = await self.agent.run(
+            f"Run integrity checks on the output: row counts, schema, nulls"
+        )
 
-**✅ Validates Our Agentic Harness Thesis:**
-- No manual session state management needed
-- Built-in error handling and recovery
-- Automatic context management
-- Planning and reasoning integrated
-- Production-grade orchestration working out of the box
-
-**vs. DIY Frameworks (LangGraph, AutoGen, CrewAI):**
-- Those require building all of this infrastructure manually
-- 4-6 months of custom development
-- 70-80% failure rate in production
-- Copilot SDK: **Working in < 1 hour**
-
----
-
-## SDK Architecture Validated
-
-```
-Python Application (our agent)
-        ↓
-  Copilot SDK Client
-        ↓ JSON-RPC over stdio
-  Copilot CLI (server mode)
-        ↓ API calls
-  GitHub Copilot Service
-        ↓ Model routing
-  GPT-5 / Claude / etc.
-```
-
-**Key Benefits Confirmed:**
-1. **Multi-model routing:** Can use `gpt-4`, `claude-sonnet-4.5`, etc.
-2. **Session persistence:** Built-in state management
-3. **Event-driven:** Real-time streaming of agent activities
-4. **Tool integration ready:** Can add custom tools via MCP servers
-5. **Enterprise auth:** Uses GitHub Copilot subscription (already authenticated)
-
----
-
-## Next Steps for POC
-
-### Immediate (This Sprint)
-
-1. **Build Custom Tools for Data Engineering:**
-   ```python
-   @define_tool
-   async def read_mapping_spreadsheet(path: str) -> dict:
-       """Read and parse client mapping spreadsheet from ADLS"""
-       # Implementation with openpyxl
-   
-   @define_tool
-   async def sample_source_data(path: str, n_rows: int = 100) -> dict:
-       """Sample first N rows of source CSV for schema inference"""
-       # Implementation with pandas
-   ```
-
-2. **Create Mapping Analysis Agent:**
-   ```python
-   session = await client.create_session({
-       "model": "gpt-5-codex",  # Best for code generation
-       "agent_description": "Data engineering assistant specializing in ETL transformations"
-   })
-   
-   # Attach custom tools
-   session.add_tools([read_mapping_spreadsheet, sample_source_data])
-   
-   # Send analysis prompt
-   await session.send({
-       "prompt": """
-       Analyze the mapping spreadsheet and source data samples.
-       Generate pseudocode for transforming this client's data into our standardized format.
-       """
-   })
-   ```
-
-3. **Implement Human-in-the-Loop Workflow:**
-   - Display generated pseudocode
-   - Allow review and approval
-   - Store approved version in Cosmos DB cache
-
-4. **PySpark Code Generation:**
-   - Convert approved pseudocode to executable PySpark
-   - Test locally with sample data
-   - Submit to Microsoft Fabric for full processing
-
----
-
-## Cost Implications Validated
-
-### Confirmed from Testing:
-- SDK uses existing Copilot Enterprise subscription
-- Premium requests counted against quota (1,000/month included with $39/seat)
-- Each analysis run = ~1-2 premium requests
-- **100 runs/month = well within quota limits**
-- **No additional per-request charges beyond subscription**
-
-**Aligns with Cost Analysis:**
-- Copilot: $39/month (already budgeted)
-- No surprise API charges
-- Predictable cost model for enterprise
-
----
-
-## Competitive Validation
-
-### What We Learned:
-
-**AWS/GCP Alternatives:**
-- Would need to use Bedrock/Vertex AI + build custom harness
-- Estimated 4-6 months dev time for production-grade orchestration
-- 70-80% failure rate (per industry data)
-
-**Microsoft Advantage Confirmed:**
-- GitHub Copilot SDK + Azure Fabric = **8 weeks to production**
-- SDK provides battle-tested harness (from millions of Copilot users)
-- Only vendor with: AI harness + Code platform + Cloud infrastructure
-
-**This POC proves:** Microsoft's positioning is not just marketing—it's architecturally sound.
-
----
-
-## Risks Mitigated
-
-| Risk | Status | Mitigation |
-|------|--------|------------|
-| SDK too immature | ✅ Resolved | Working in technical preview, all core features operational |
-| Complex setup/auth | ✅ Resolved | Uses existing Copilot auth, minimal configuration |
-| Windows compatibility | ✅ Resolved | Explicit CLI path needed, documented |
-| Event handling unclear | ✅ Resolved | Event system working, documented event types |
-| Cost unpredictable | ✅ Resolved | Premium request model confirmed |
-
----
-
-## Code Repository
-
-**Test Script:** `test_copilot_sdk.py`
-- Demonstrates: Client init, session creation, message send, event handling
-- Runtime: ~15 seconds per test
-- Success rate: 100% after CLI path fix
-
-**Installation:**
-```bash
-# Set up environment
-uv venv
-uv pip install github-copilot-sdk
-
-# Run test
-uv run test_copilot_sdk.py
+        # Phase 6: Final human review (only if checks pass)
+        if check_result.passed:
+            final = await checkpoint("final_review", {
+                "integrity_report": check_result,
+                "sample_output": sample_rows,
+            })
 ```
 
 ---
 
-## Lessons Learned
+## Historical: GitHub Copilot SDK Validation (January 2026)
 
-### Technical
-1. **Windows CLI path:** Must use `.cmd` extension explicitly
-2. **Event-driven is key:** Don't try to await message content directly—use event listeners
-3. **Model selection matters:** Can specify `gpt-5-codex` for data tasks vs `claude-sonnet-4.5` for reasoning
-4. **Session lifecycle:** Always call `start()` → `create_session()` → `destroy()` → `stop()`
+> **Note:** This section preserved for reference. The Copilot SDK validation was successful and the technology works. We are moving away due to GA timeline risk, not technical issues.
 
-### Strategic
-1. **Agentic harness is the differentiator:** Not the model, not the framework—the production orchestration
-2. **Time-to-production validated:** < 1 hour to working agent vs. months with DIY
-3. **Microsoft's moat is real:** AWS/GCP can't replicate this without owning a code platform + agent harness
-4. **Customer value clear:** This speeds up *their* delivery, not just ours
+### What Was Validated
+- SDK version: `github-copilot-sdk==0.1.18`
+- Copilot CLI: `v0.0.394`
+- All event types working (PENDING_MESSAGES_MODIFIED, USER_MESSAGE, ASSISTANT_TURN_START/END, SESSION_USAGE_INFO, ASSISTANT_MESSAGE, ASSISTANT_REASONING, SESSION_IDLE)
+- Multi-model routing confirmed (GPT-4, Claude, etc.)
+- Session persistence and event-driven streaming operational
+- MCP tool integration ready
+- Windows-specific: must specify CLI path to `copilot.cmd` explicitly
 
----
+### Test Script
+`test_copilot_sdk.py` — demonstrates client init, session creation, message send, event handling. Still present in repo for reference.
 
-## Recommendations
+### Why It Worked
+The Copilot SDK provides a production-grade agentic harness with built-in planning, tool invocation, context management, and error recovery. It reduces the typical 4-6 month DIY development effort to hours.
 
-### For Customer Engagement
-- **Lead with speed:** "Working agent in 8 weeks vs. 6 months"
-- **Lead with reliability:** "70% failure rate reduced to <10% with proven harness"
-- **Lead with cost:** "$9K/year vs. $320K/year manual process"
-
-### For Microsoft Internal
-- **Emphasize platform lock-in:** Customer becomes dependent on GitHub + Azure + Copilot SDK
-- **Highlight TAM:** $50-100M across similar enterprises
-- **Showcase repeatability:** This pattern works for ANY data engineering use case
+### Why We're Not Using It (For Now)
+- **Preview status**: No confirmed GA date as of February 2026
+- **Customer timeline**: Production deployment cannot depend on a preview SDK
+- **Agent Framework compatibility**: If Copilot SDK reaches GA, it can be used as a backend agent type (`GitHubCopilotAgent`) within the Agent Framework — so this isn't a permanent departure
 
 ---
 
-## Success Metrics Met
+## Next Steps
 
-- [x] SDK installed and operational
-- [x] Agent session creation working
-- [x] Event system validated
-- [x] Multi-model support confirmed
-- [x] Windows compatibility resolved
-- [x] Cost model validated
-- [x] Architecture thesis proven
-
----
-
-**Next Checkpoint:** Build first custom tool and test mapping analysis agent with real client data.
-
-**Status:** 🟢 **CLEARED TO PROCEED**
-
+1. Set up Azure OpenAI resource with GPT-4o deployment
+2. Build MCP tool servers for ADLS data access and Databricks job submission
+3. Implement `TransformationWorkflow` with checkpointing and 3-try retry logic
+4. Test end-to-end: profiling → pseudocode → auditor review → PySpark → integrity checks → auditor final review
+5. Deploy to customer's existing compute (AKS or Azure Durable Functions) with Managed Identity
+   - **Note:** Customer CTO org requires using existing tech stack (AKS, Durable Functions). Container Apps is a future roadmap option.
