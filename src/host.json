@@ -1,0 +1,28 @@
+{
+  "version": "2.0",
+  "functionTimeout": "00:30:00",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    }
+  },
+  "extensions": {
+    "durableTask": {
+      "hubName": "DataEngineeringAgent"
+    },
+    "http": {
+      "routePrefix": "api",
+      "cors": {
+        "allowedOrigins": ["http://localhost:3000"],
+        "supportCredentials": false
+      }
+    }
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}

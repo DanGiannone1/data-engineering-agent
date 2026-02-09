@@ -24,8 +24,16 @@ az account set --subscription "$SUBSCRIPTION_ID"
 echo "Subscription set to $SUBSCRIPTION_ID"
 echo ""
 
+# Create resource group if it doesn't exist
+echo "Ensuring resource group '$RESOURCE_GROUP' exists..."
+az group create \
+  --name "$RESOURCE_GROUP" \
+  --location "$LOCATION" \
+  --only-show-errors
+echo ""
+
 # Run deployment scripts in order
-for script in 01-storage.sh 02-cosmos.sh 03-monitoring.sh 04-function-app.sh 05-databricks.sh; do
+for script in 01-storage.sh 02-cosmos.sh 03-monitoring.sh 04-function-app.sh 05-databricks.sh 06-rbac.sh; do
   echo ""
   echo ">>> Running $script ..."
   echo ""

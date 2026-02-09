@@ -1,0 +1,11 @@
+azure-functions
+azure-functions-durable
+azure-identity
+azure-storage-file-datalake
+azure-cosmos
+openai
+openpyxl
+pandas
+pydantic
+requests
+pyarrow

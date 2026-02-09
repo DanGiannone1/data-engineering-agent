@@ -210,3 +210,14 @@ __marimo__/
 input_data/
 gemini.md
 docs/transcript-2026-01-19.txt
+
+# Claude Code
+.claude/
+
+# Azure Functions local settings
+src/local.settings.json
+
+# Node.js / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
