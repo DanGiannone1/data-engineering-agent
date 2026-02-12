@@ -1,10 +1,18 @@
-"""Simple HTTP server for frontend - wraps core pipeline."""
+"""HTTP server exposing MAF workflow for frontend."""
+
+import os
+import sys
+
+# Add src to path
+sys.path.insert(0, os.path.dirname(__file__))
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from core.state import store, Status
-from core.pipeline import start_pipeline_async, submit_review
+from agents.workflow import store, start_workflow_async, Status
 
 app = Flask(__name__)
 CORS(app)
@@ -19,10 +27,10 @@ def health():
 def start_transform():
     """Start a new transformation session."""
     session = store.create()
-    start_pipeline_async(session)
+    start_workflow_async(session)
     return jsonify({
         "instance_id": session.id,
-        "client_id": "MAF"
+        "client_id": "MAF_Fund_Transactions",
     }), 202
 
 
@@ -43,7 +51,7 @@ def get_status(session_id: str):
 
 @app.route("/api/transform/<session_id>/messages", methods=["GET"])
 def get_messages(session_id: str):
-    """Get session messages."""
+    """Get session messages for chat UI."""
     session = store.get(session_id)
     if not session:
         return jsonify({"error": "Not found"}), 404
@@ -52,7 +60,7 @@ def get_messages(session_id: str):
         {
             "id": msg.id,
             "thread_id": session.id,
-            "client_id": "MAF",
+            "client_id": "MAF_Fund_Transactions",
             "role": msg.role,
             "content": msg.content,
             "phase": msg.phase,
@@ -64,8 +72,8 @@ def get_messages(session_id: str):
 
 
 @app.route("/api/transform/<session_id>/review", methods=["POST"])
-def post_review(session_id: str):
-    """Submit a review."""
+def submit_review(session_id: str):
+    """Submit auditor review (approve/reject with feedback)."""
     session = store.get(session_id)
     if not session:
         return jsonify({"error": "Not found"}), 404
@@ -74,17 +82,17 @@ def post_review(session_id: str):
     approved = data.get("approved", False)
     feedback = data.get("feedback", "")
 
-    submit_review(session, approved, feedback)
+    session.submit_review(approved, feedback)
 
     return jsonify({"status": "review submitted", "approved": approved})
 
 
 if __name__ == "__main__":
-    print("\n" + "=" * 50)
-    print("MAF Transformation Server")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("Fund Transactions Server")
+    print("=" * 60)
     print("Backend:  http://localhost:7071")
-    print("Frontend: http://localhost:3000 (run separately)")
-    print("=" * 50 + "\n")
+    print("Frontend: http://localhost:3000")
+    print("=" * 60 + "\n")
 
-    app.run(host="0.0.0.0", port=7071, debug=True)
+    app.run(host="0.0.0.0", port=7071, debug=True, use_reloader=False)
