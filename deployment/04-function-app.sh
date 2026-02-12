@@ -4,19 +4,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../.env"
 
-FUNC_STORAGE_NAME="${STORAGE_ACCOUNT_NAME}func"
+# Generate a unique suffix for the function storage account
+UNIQUE_SUFFIX=$(echo "$RESOURCE_GROUP" | md5sum | cut -c1-6)
+FUNC_STORAGE_NAME="${STORAGE_ACCOUNT_NAME}f${UNIQUE_SUFFIX}"
 
 echo "=== Creating Function App Storage Account ==="
 
-az storage account create \
-  --name "$FUNC_STORAGE_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION" \
-  --sku Standard_LRS \
-  --kind StorageV2 \
-  --only-show-errors
-
-echo "Function App storage account '$FUNC_STORAGE_NAME' created."
+# Check if storage account already exists in our resource group
+if az storage account show --name "$FUNC_STORAGE_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+  echo "Function App storage account '$FUNC_STORAGE_NAME' already exists, skipping creation."
+else
+  az storage account create \
+    --name "$FUNC_STORAGE_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$LOCATION" \
+    --sku Standard_LRS \
+    --kind StorageV2 \
+    --only-show-errors
+  echo "Function App storage account '$FUNC_STORAGE_NAME' created."
+fi
 
 echo "=== Creating Function App (Flex Consumption) ==="
 

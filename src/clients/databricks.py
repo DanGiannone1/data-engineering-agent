@@ -1,3 +1,9 @@
+"""Databricks client using managed identity for ADLS access.
+
+Uses Access Connector for Azure Databricks to provide managed identity
+authentication to ADLS Gen2, eliminating the need for Service Principal secrets.
+"""
+
 import base64
 import os
 import uuid
@@ -10,7 +16,7 @@ DATABRICKS_RESOURCE_ID = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d"  # Azure Databri
 
 
 def _get_databricks_token() -> str:
-    credential = DefaultAzureCredential()
+    credential = DefaultAzureCredential(process_timeout=30)
     token = credential.get_token(f"{DATABRICKS_RESOURCE_ID}/.default")
     return token.token
 
@@ -29,7 +35,8 @@ def submit_run(pyspark_code: str, client_id: str = "", cluster_config: dict | No
         storage_account = os.environ["ADLS_ACCOUNT_NAME"]
         sp_client_id = os.environ["DATABRICKS_SP_CLIENT_ID"]
         sp_secret = os.environ["DATABRICKS_SP_SECRET"]
-        sp_tenant = os.environ.get("DATABRICKS_SP_TENANT", "4e278620-67ad-411e-89a5-0f82836e52c5")
+        sp_tenant = os.environ.get("DATABRICKS_SP_TENANT", "16b3c013-d300-468d-ac64-7eda0820b6d3")
+
         cluster_config = {
             "spark_version": "14.3.x-scala2.12",
             "node_type_id": "Standard_D4s_v3",
