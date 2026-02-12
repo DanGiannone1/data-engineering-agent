@@ -23,7 +23,6 @@ def run_agent(system_prompt: str, user_message: str) -> str:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        temperature=0.2,
     )
 
     result = response.choices[0].message.content

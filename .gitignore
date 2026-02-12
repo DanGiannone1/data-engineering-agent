@@ -206,10 +206,20 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Input data directory
+# Input data directory (customer data files)
 input_data/
+
+# Customer-specific state and notes
+current_state*.md
 gemini.md
-docs/transcript-2026-01-19.txt
+
+# Meeting transcripts (contain names/companies)
+docs/transcript*.txt
+docs/transcript*.md
+
+# Temporary/scratch files
+scratch/
+*.scratch.*
 
 # Claude Code
 .claude/
