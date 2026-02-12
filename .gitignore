@@ -231,3 +231,6 @@ src/local.settings.json
 node_modules/
 frontend/.next/
 frontend/out/
+
+# Frontend lib folder (not Python)
+!frontend/lib/

@@ -7,6 +7,15 @@ interface Props {
 export default function ChatMessage({ message }: Props) {
   const isAgent = message.role === "agent";
 
+  // For structured pseudocode messages, show a summary instead of raw JSON
+  const displayContent = (() => {
+    if (message.structured_pseudocode) {
+      const pc = message.structured_pseudocode;
+      return `${pc.summary}\n\n(${pc.steps?.length || 0} transformation steps - see review panel below)`;
+    }
+    return message.content;
+  })();
+
   return (
     <div className={`flex ${isAgent ? "justify-start" : "justify-end"} mb-4`}>
       <div
@@ -24,7 +33,7 @@ export default function ChatMessage({ message }: Props) {
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
         </div>
-        <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+        <div className="whitespace-pre-wrap text-sm">{displayContent}</div>
       </div>
     </div>
   );

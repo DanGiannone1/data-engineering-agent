@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   getStatus,
@@ -8,10 +8,13 @@ import {
   submitReview,
   Message,
   TransformStatus,
+  StepComment,
+  StructuredPseudocode,
 } from "@/lib/api";
 import ChatMessage from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import ApprovalControls from "@/components/ApprovalControls";
+import PseudocodeReview from "@/components/PseudocodeReview";
 import StatusBadge from "@/components/StatusBadge";
 
 const POLL_INTERVAL = 3000;
@@ -39,6 +42,19 @@ export default function TransformChat() {
   const isPendingReview =
     isWaiting &&
     (latestPhase === "pseudocode_review" || latestPhase === "output_review");
+
+  // Check if we have structured pseudocode for rich review UI
+  const latestPseudocode = useMemo((): StructuredPseudocode | null => {
+    if (latestPhase !== "pseudocode_review" || !isPendingReview) return null;
+    const latestMsg = messages[messages.length - 1];
+    return latestMsg?.structured_pseudocode || null;
+  }, [messages, latestPhase, isPendingReview]);
+
+  // Get all messages except the latest pseudocode (for history display)
+  const historyMessages = useMemo(() => {
+    if (!latestPseudocode) return messages;
+    return messages.slice(0, -1);
+  }, [messages, latestPseudocode]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -87,6 +103,22 @@ export default function TransformChat() {
     }
   }
 
+  async function handleRejectWithComments(
+    feedback: string,
+    stepComments: StepComment[]
+  ) {
+    setLoading(true);
+    try {
+      await submitReview(instanceId, {
+        approved: false,
+        feedback,
+        step_comments: stepComments,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSend(text: string) {
     setLoading(true);
     try {
@@ -117,27 +149,47 @@ export default function TransformChat() {
         />
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto bg-gray-100 rounded-lg p-4 mb-4">
-        {messages.length === 0 && (
-          <p className="text-gray-500 text-center py-8">
-            Waiting for agent to start processing...
-          </p>
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Messages / History */}
+        <div className="bg-gray-100 rounded-lg p-4 mb-4">
+          {historyMessages.length === 0 && !latestPseudocode && (
+            <p className="text-gray-500 text-center py-8">
+              Waiting for agent to start processing...
+            </p>
+          )}
+          {historyMessages.map((msg) => (
+            <ChatMessage key={msg.id} message={msg} />
+          ))}
+          {!latestPseudocode && messages.length > historyMessages.length && (
+            <ChatMessage
+              key={messages[messages.length - 1].id}
+              message={messages[messages.length - 1]}
+            />
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Structured Pseudocode Review UI */}
+        {latestPseudocode && isPendingReview && (
+          <PseudocodeReview
+            pseudocode={latestPseudocode}
+            messages={messages}
+            onApprove={handleApprove}
+            onReject={handleRejectWithComments}
+            disabled={loading}
+          />
         )}
-        {messages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} />
-        ))}
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Controls */}
-      {isPendingReview ? (
+      {/* Controls for non-pseudocode phases */}
+      {isPendingReview && !latestPseudocode ? (
         <ApprovalControls
           onApprove={handleApprove}
           onReject={handleReject}
           disabled={loading}
         />
-      ) : isRunning ? (
+      ) : isRunning && !isPendingReview ? (
         <ChatInput onSend={handleSend} disabled={!isWaiting || loading} />
       ) : status?.runtime_status === "Completed" ? (
         <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center text-green-800">
