@@ -8,8 +8,8 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("CLIENT_001_Transactions_Transform")
 
-input_path = "abfss://data@deagentstorage.dfs.core.windows.net/CLIENT_001/transactions.xlsx"
-output_path = "abfss://output@deagentstorage.dfs.core.windows.net/CLIENT_001/20260208_034059"
+input_path = "abfss://data@deagentstorage2026.dfs.core.windows.net/CLIENT_001/transactions.xlsx"
+output_path = "abfss://output@deagentstorage2026.dfs.core.windows.net/CLIENT_001/20260225_195828"
 
 expected_columns = [
     "UserBank", "Client Id", "Account Requested", "Request To Date", "Request From Date", "Security Ticker Symbol",
@@ -206,7 +206,7 @@ if "V_OUTTS" in df.columns and "A_RECEIVABLE_BASE" in df.columns and "A_PAYABLE_
     df = df.withColumn("V_NAV", (F.col("A_RECEIVABLE_BASE") - F.col("A_PAYABLE_BASE")) / F.col("V_OUTTS"))
 
 if "TS-REV-FLAG" in df.columns:
-    df = df.filter(~F.col("TS-REV-FLAG").isin(reversal_codes))
+    df = df.filter(F.col("TS-REV-FLAG").isNull() | ~F.col("TS-REV-FLAG").isin(reversal_codes))
 
 if "T_TYPE" in df.columns:
     relevant_t_types = [code for code in t_type_map.values() if code is not None]
@@ -222,7 +222,7 @@ for dnav_col in ["R_IDFUND", "A_ISIN", "A_CUSIP", "V_OUTTS", "A_SETTLE_DATE", "A
 
 for dnav_col in ["A_SETTLE_DATE", "A_TRADE_DATE"]:
     if dnav_col in df.columns:
-        df = df.withColumn(dnav_col, F.date_format(F.to_date(F.col(dnav_col), "MM/dd/yyyy"), "yyyy-MM-dd"))
+        df = df.withColumn(dnav_col, F.date_format(F.to_date(F.col(dnav_col).cast("string"), "yyyyMMdd"), "MM/dd/yyyy"))
 
 output_columns = list(column_mapping.values())
 for col in ["A_AMORTIZATION_ACCRETION_AC", "A_BOOKPRICE_AC", "A_BOOKPRICE_AMORTIZED_LTD_AC", "V_NAV"]:
