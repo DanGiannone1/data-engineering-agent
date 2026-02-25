@@ -226,6 +226,14 @@ scratch/
 
 # Azure Functions local settings
 src/local.settings.json
+src-dotnet/**/local.settings.json
+
+# .NET build artifacts
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
 
 # Node.js / Next.js
 node_modules/
