@@ -128,20 +128,26 @@ Create `src-dotnet/src/DataEngineeringAgent.Functions/local.settings.json`:
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage__accountName": "<function-storage-account>",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AZURE_OPENAI_ENDPOINT": "https://<your-resource>.cognitiveservices.azure.com",
-    "AZURE_OPENAI_DEPLOYMENT": "gpt-4.1",
-    "COSMOS_ENDPOINT": "https://<cosmos-account>.documents.azure.com:443/",
-    "COSMOS_DATABASE": "agent-db",
-    "ADLS_ACCOUNT_NAME": "<storage-account>",
-    "DATABRICKS_HOST": "https://<workspace-url>.azuredatabricks.net",
-    "DATABRICKS_SP_CLIENT_ID": "<sp-client-id>",
-    "DATABRICKS_SP_SECRET": "<sp-client-secret>",
-    "DATABRICKS_SP_TENANT": "<tenant-id>"
+    "OpenAi__Endpoint": "https://<your-resource>.cognitiveservices.azure.com",
+    "OpenAi__DeploymentName": "gpt-4.1",
+    "Cosmos__Endpoint": "https://<cosmos-account>.documents.azure.com:443/",
+    "Cosmos__DatabaseName": "agent-db",
+    "Adls__AccountName": "<storage-account>",
+    "Databricks__Host": "https://<workspace-url>.azuredatabricks.net",
+    "Databricks__SpClientId": "<sp-client-id>",
+    "Databricks__SpClientSecret": "<sp-client-secret>",
+    "Databricks__TenantId": "<tenant-id>",
+    "REPO_ROOT": "/path/to/data-engineering-agent"
   }
 }
 ```
+
+The local Functions runtime authenticates to Azure services via `DefaultAzureCredential` (your `az login` session). Make sure your user has:
+- **Storage Blob Data Contributor** on the ADLS storage account
+- **Cosmos DB Built-in Data Contributor** on the Cosmos account (SQL RBAC, not control plane)
+- **Cognitive Services OpenAI User** on the Azure OpenAI resource
 
 ### Python Backend (alternative)
 
@@ -151,7 +157,7 @@ pip install -r requirements.txt
 func start
 ```
 
-Create `src-python/local.settings.json` with the same keys (use `"FUNCTIONS_WORKER_RUNTIME": "python"`).
+Create `src-python/local.settings.json` — same settings as above but with `"FUNCTIONS_WORKER_RUNTIME": "python"` and flat env var names (`AZURE_OPENAI_ENDPOINT`, `COSMOS_ENDPOINT`, `ADLS_ACCOUNT_NAME`, etc.).
 
 ### Frontend
 
@@ -161,7 +167,7 @@ npm install
 npm run dev
 ```
 
-Runs at `http://localhost:3001`. Set `NEXT_PUBLIC_API_URL=http://localhost:7071/api` in `frontend/.env.local` to point at the local backend.
+Runs at `http://localhost:3001`. API calls are automatically proxied to `localhost:7071` via `next.config.ts` rewrites — no extra config needed.
 
 The dashboard accepts a **Client ID** (e.g., `CLIENT_001`) and derives the mapping/data paths automatically.
 
