@@ -87,12 +87,16 @@ public static class TransformOrchestrator
 
                 // --- Phase 4a: Code Generation ---
                 var sa = input.AdlsAccountName;
+                // DataPath may include container prefix (e.g. "data/CLIENT_001/file.xlsx")
+                // but the abfss URL already specifies the container, so strip it
+                var blobPath = input.DataPath.StartsWith("data/", StringComparison.OrdinalIgnoreCase)
+                    ? input.DataPath["data/".Length..] : input.DataPath;
                 pysparkCode = await context.CallActivityAsync<string>(
                     nameof(CodeGenerationActivity.CodeGeneration),
                     new CodeGenerationInput(
                         input.ClientId,
                         pseudocode,
-                        $"abfss://data@{sa}.dfs.core.windows.net/{input.DataPath}",
+                        $"abfss://data@{sa}.dfs.core.windows.net/{blobPath}",
                         $"abfss://output@{sa}.dfs.core.windows.net/{outputPath}",
                         input.DataPath));
             }

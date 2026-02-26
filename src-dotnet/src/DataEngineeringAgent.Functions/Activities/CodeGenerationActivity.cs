@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using DataEngineeringAgent.Core.Prompts;
 using DataEngineeringAgent.Core.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -10,6 +11,9 @@ public class CodeGenerationActivity
     private readonly IAdlsService _adls;
     private readonly IOpenAiService _openAi;
     private readonly ILogger<CodeGenerationActivity> _logger;
+
+    // Patterns that indicate the LLM generated boilerplate instead of just the config
+    private static readonly string[] ForbiddenPatterns = ["import ", "spark.read", ".write.parquet", "spark.createDataFrame"];
 
     public CodeGenerationActivity(IAdlsService adls, IOpenAiService openAi, ILogger<CodeGenerationActivity> logger)
     {
@@ -35,16 +39,42 @@ public class CodeGenerationActivity
             }
         }
 
-        var prompt = SystemPrompts.CodeGeneration
-            .Replace("{input_path}", input.InputPath)
-            .Replace("{output_path}", input.OutputPath)
-            .Replace("{client_id}", input.ClientId)
+        var prompt = SystemPrompts.ConfigGeneration
             .Replace("{pseudocode}", input.Pseudocode)
             .Replace("{source_columns}", sourceColumns);
 
-        var code = await _openAi.RunAgentCodeAsync(prompt, "Generate the PySpark transformation code.");
-        _logger.LogInformation("Generated PySpark code for {ClientId} ({Chars} chars)", input.ClientId, code.Length);
-        return code;
+        var configBlock = await _openAi.RunAgentCodeAsync(prompt, "Generate the TRANSFORM_CONFIG dict.");
+
+        // Strip markdown code fences if present
+        configBlock = StripCodeFences(configBlock);
+
+        // Validate: must contain TRANSFORM_CONFIG, must NOT contain boilerplate
+        if (!configBlock.Contains("TRANSFORM_CONFIG"))
+            throw new InvalidOperationException("LLM output does not contain TRANSFORM_CONFIG");
+
+        foreach (var pattern in ForbiddenPatterns)
+        {
+            if (configBlock.Contains(pattern))
+                throw new InvalidOperationException(
+                    $"LLM generated boilerplate code (found '{pattern}'). Expected only TRANSFORM_CONFIG dict.");
+        }
+
+        // Assemble full notebook: inject config + paths into template
+        var notebook = SystemPrompts.SparkTemplate
+            .Replace("{input_path}", input.InputPath)
+            .Replace("{output_path}", input.OutputPath)
+            .Replace("{config_block}", configBlock);
+
+        _logger.LogInformation("Generated PySpark notebook for {ClientId} ({Chars} chars, config {ConfigChars} chars)",
+            input.ClientId, notebook.Length, configBlock.Length);
+        return notebook;
+    }
+
+    private static string StripCodeFences(string text)
+    {
+        // Remove ```python ... ``` or ``` ... ``` wrappers
+        var match = Regex.Match(text, @"```(?:python)?\s*\n([\s\S]*?)\n\s*```", RegexOptions.Singleline);
+        return match.Success ? match.Groups[1].Value.Trim() : text.Trim();
     }
 }
 
