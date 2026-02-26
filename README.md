@@ -5,11 +5,14 @@ AI agent that automates data transformations for audit engagements. Auditors upl
 ## Architecture
 
 - **Agent Runtime:** Azure Durable Functions (Flex Consumption) with a 6-phase orchestrator
-- **LLM:** Azure OpenAI (`gpt-4.1`) via `openai` SDK + `DefaultAzureCredential`
+- **C# Backend:** .NET 8 isolated worker (primary) — `src-dotnet/`
+- **Python Backend:** Python 3.11 (alternative) — `src-python/`
+- **LLM:** Azure OpenAI (`gpt-4.1`) via `DefaultAzureCredential`
 - **Spark:** Azure Databricks (Jobs Compute via REST API)
 - **Storage:** ADLS Gen2 (mappings, source data, output)
 - **State:** Cosmos DB Serverless (conversation history)
 - **Approved Code:** Git repo (`approved-code/{client_id}/`)
+- **Frontend:** Next.js (chat UI with approval controls)
 
 ### Agent Workflow
 
@@ -24,8 +27,9 @@ AI agent that automates data transformations for audit engagements. Auditors upl
 
 - **Azure CLI** >= 2.60 (`az --version`)
 - **Azure Functions Core Tools** v4 (`func --version`)
-- **Python** 3.11
-- **Node.js** >= 18 (for frontend)
+- **.NET 8 SDK** (`dotnet --version`) — for C# backend
+- **Python** 3.11 — for Python backend
+- **Node.js** >= 18 — for frontend
 - An Azure subscription with permissions to create resources
 - An **Azure OpenAI** resource with a `gpt-4.1` model deployment (create this manually in Azure AI Foundry — not automated by the deployment scripts)
 
@@ -65,7 +69,7 @@ This runs the scripts in order:
 | `01-storage.sh` | ADLS Gen2 storage account + containers (mappings, data, output, audit-trail) |
 | `02-cosmos.sh` | Cosmos DB Serverless account + `agent-db` database + `conversations` container |
 | `03-monitoring.sh` | Log Analytics workspace + Application Insights |
-| `04-function-app.sh` | Function App (Flex Consumption, Python 3.11, system-assigned Managed Identity) + app settings |
+| `04-function-app.sh` | Function App (Flex Consumption, system-assigned Managed Identity) + app settings |
 | `05-databricks.sh` | Databricks workspace (Standard tier) |
 | `06-rbac.sh` | RBAC role assignments for Function App's Managed Identity + sets DATABRICKS_HOST app setting |
 
@@ -109,22 +113,24 @@ This uploads test mapping + source data files to the `mappings` and `data` conta
 
 ## Local Development
 
-### Backend (Azure Functions)
+### C# Backend (primary)
 
 ```bash
-cd src
-pip install -r requirements.txt
+cd src-dotnet
+dotnet build
+cd src/DataEngineeringAgent.Functions
+func start
 ```
 
-Create `src/local.settings.json`:
+Create `src-dotnet/src/DataEngineeringAgent.Functions/local.settings.json`:
 
 ```json
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage__accountName": "<function-storage-account>func",
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AZURE_OPENAI_ENDPOINT": "https://<your-resource>.openai.azure.com",
+    "AzureWebJobsStorage__accountName": "<function-storage-account>",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AZURE_OPENAI_ENDPOINT": "https://<your-resource>.cognitiveservices.azure.com",
     "AZURE_OPENAI_DEPLOYMENT": "gpt-4.1",
     "COSMOS_ENDPOINT": "https://<cosmos-account>.documents.azure.com:443/",
     "COSMOS_DATABASE": "agent-db",
@@ -137,19 +143,17 @@ Create `src/local.settings.json`:
 }
 ```
 
-The local Functions runtime authenticates to Azure services via `DefaultAzureCredential` (your `az login` session). Make sure your user has:
-- **Storage Blob Data Contributor** on the ADLS storage account
-- **Cosmos DB Built-in Data Contributor** on the Cosmos account (SQL RBAC, not control plane)
-- **Cognitive Services OpenAI User** on the Azure OpenAI resource
-
-Start the function app:
+### Python Backend (alternative)
 
 ```bash
-cd src
+cd src-python
+pip install -r requirements.txt
 func start
 ```
 
-### Frontend (Next.js)
+Create `src-python/local.settings.json` with the same keys (use `"FUNCTIONS_WORKER_RUNTIME": "python"`).
+
+### Frontend
 
 ```bash
 cd frontend
@@ -157,7 +161,9 @@ npm install
 npm run dev
 ```
 
-Runs at `http://localhost:3000`. The backend CORS config in `src/host.json` allows this origin.
+Runs at `http://localhost:3001`. Set `NEXT_PUBLIC_API_URL=http://localhost:7071/api` in `frontend/.env.local` to point at the local backend.
+
+The dashboard accepts a **Client ID** (e.g., `CLIENT_001`) and derives the mapping/data paths automatically.
 
 ## API Endpoints
 
@@ -176,15 +182,20 @@ curl -X POST http://localhost:7071/api/transform \
   -H "Content-Type: application/json" \
   -d '{
     "client_id": "CLIENT_001",
-    "mapping_path": "CLIENT_001/mapping.xlsx",
-    "data_path": "CLIENT_001/source_data.csv"
+    "mapping_path": "mappings/CLIENT_001/mapping.xlsm",
+    "data_path": "data/CLIENT_001/transactions.xlsx"
   }'
 ```
 
 ## Project Structure
 
 ```
-src/
+src-dotnet/                # C# backend (.NET 8 isolated worker)
+  src/
+    DataEngineeringAgent.Functions/   # Azure Functions entry point
+    DataEngineeringAgent.Core/        # Business logic, services, models
+  tests/                              # Unit + integration tests
+src-python/                # Python backend (Azure Functions)
   function_app.py          # HTTP triggers + orchestrator + activity registration
   orchestrator/transform.py # 6-phase durable orchestrator
   activities/              # Phase implementations
@@ -192,10 +203,10 @@ src/
   clients/                 # Azure SDK wrappers (ADLS, Cosmos, Databricks)
   models/                  # Pydantic schemas
   tools/                   # Direct function tools
-frontend/                  # Next.js UI (scaffold)
+  tests/                   # Unit + E2E tests
+frontend/                  # Next.js UI (chat + approval controls)
 deployment/                # Azure CLI deployment scripts
 scripts/                   # Test/utility scripts
-tests/                     # Unit + E2E tests
 approved-code/             # Persisted approved transforms per client
 docs/                      # Design docs, cost analysis, requirements
 ```
