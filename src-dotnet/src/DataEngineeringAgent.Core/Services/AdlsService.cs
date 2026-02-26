@@ -33,14 +33,6 @@ public class AdlsService : IAdlsService
         return ms.ToArray();
     }
 
-    public async Task UploadFileAsync(string container, string path, byte[] data)
-    {
-        var fs = _client.GetFileSystemClient(container);
-        var file = fs.GetFileClient(path);
-        using var stream = new MemoryStream(data);
-        await file.UploadAsync(stream, overwrite: true);
-    }
-
     public async Task<List<string>> ListFilesAsync(string container, string prefix = "")
     {
         var fs = _client.GetFileSystemClient(container);

@@ -198,7 +198,7 @@ test.describe("Transform page — review flow", () => {
     await page.getByRole("button", { name: "Approve" }).click();
 
     await expect.poll(() => capturedBody).not.toBeNull();
-    expect(capturedBody).toEqual({ approved: true, feedback: "" });
+    expect(capturedBody).toEqual({ approved: true });
   });
 
   test("reject shows feedback textarea and sends feedback", async ({ page }) => {

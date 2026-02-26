@@ -79,19 +79,10 @@ function renderMarkdown(text: string): React.ReactNode[] {
 export default function ChatMessage({ message }: Props) {
   const isAgent = message.role === "agent";
 
-  // For structured pseudocode messages, show a summary instead of raw JSON
-  const displayContent = (() => {
-    if (message.structured_pseudocode) {
-      const pc = message.structured_pseudocode;
-      return `${pc.summary}\n\n(${pc.steps?.length || 0} transformation steps - see review panel below)`;
-    }
-    return message.content;
-  })();
-
   // Use markdown rendering for agent messages (may contain headers, bold, bullets)
   const renderedContent = isAgent
-    ? renderMarkdown(displayContent)
-    : displayContent;
+    ? renderMarkdown(message.content)
+    : message.content;
 
   return (
     <div className={`flex ${isAgent ? "justify-start" : "justify-end"} mb-4`}>
