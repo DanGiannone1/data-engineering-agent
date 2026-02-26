@@ -135,9 +135,9 @@ export interface ReviewPayload {
 // ──────────────────────────────────────────
 
 // Default paths for local development
-const DEFAULT_CLIENT_ID = "MAF";
-const DEFAULT_MAPPING_PATH = "data/MAF/mapping.xlsx";
-const DEFAULT_DATA_PATH = "data/MAF/transactions.xlsx";
+const DEFAULT_CLIENT_ID = "CLIENT_001";
+const DEFAULT_MAPPING_PATH = "mappings/CLIENT_001/mapping.xlsm";
+const DEFAULT_DATA_PATH = "data/CLIENT_001/transactions.xlsx";
 
 export async function startTransform(params?: {
   client_id?: string;
